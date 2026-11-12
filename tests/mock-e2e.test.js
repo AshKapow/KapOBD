@@ -19,8 +19,8 @@ async function setup(profile, opts = {}) {
   return { log, t, elm, sim };
 }
 
-test('Clio: init, two ECUs, VIN, hybrid PID 5B', async () => {
-  const { elm, sim } = await setup('clio');
+test('Hybrid with gateway: init, two ECUs, VIN, hybrid PID 5B', async () => {
+  const { elm, sim } = await setup('hybrid');
   const init = await elm.init();
   assert.equal(init.ok, true, init.error);
   assert.equal(init.adapterId, 'ELM327 v1.5');
@@ -30,7 +30,7 @@ test('Clio: init, two ECUs, VIN, hybrid PID 5B', async () => {
   assert.ok(!sim.received.includes(''), 'never sends an empty line');
 
   const p = await discoverVehicle(elm);
-  assert.equal(p.vin, 'VF1SIMC110E7EC401');
+  assert.equal(p.vin, 'SIMHYBRID00000001');
   assert.deepEqual(Object.keys(p.ecus).sort(), ['7E8', '7EA']);
   assert.ok(p.ecus['7EA'].supported01.includes(0x5b));
   assert.ok(p.ecus['7E8'].supported01.includes(0x5c));
@@ -39,8 +39,8 @@ test('Clio: init, two ECUs, VIN, hybrid PID 5B', async () => {
   assert.equal(p.monitor['7E8'].dtcCount, 1);
 });
 
-test('Clio: stored/pending/permanent codes, clearing refused, no retry', async () => {
-  const { elm, sim } = await setup('clio');
+test('Hybrid with gateway: stored/pending/permanent codes, clearing refused, no retry', async () => {
+  const { elm, sim } = await setup('hybrid');
   await elm.init();
   assert.deepEqual((await readDtcs(elm, 0x03)).codes, ['P0420']);
   assert.deepEqual((await readDtcs(elm, 0x07)).codes, ['P0171']);
@@ -52,11 +52,11 @@ test('Clio: stored/pending/permanent codes, clearing refused, no retry', async (
   assert.deepEqual((await readDtcs(elm, 0x03)).codes, ['P0420']);
 });
 
-test('Mazda: single ECU, clearing works and is verified', async () => {
-  const { elm } = await setup('mazda');
+test('Petrol car: single ECU, clearing works and is verified', async () => {
+  const { elm } = await setup('petrol');
   await elm.init();
   const p = await discoverVehicle(elm);
-  assert.equal(p.vin, 'JMZSIMMAZDA300017');
+  assert.equal(p.vin, 'SIMPETROL00000002');
   assert.deepEqual(Object.keys(p.ecus), ['7E8']);
   assert.ok(p.supported01.includes(0x44), 'discovery continues past 0x40');
   assert.deepEqual((await readDtcs(elm, 0x03)).codes, ['P0301', 'P0128']);
@@ -69,7 +69,7 @@ test('Mazda: single ECU, clearing works and is verified', async () => {
 });
 
 test('survives tiny fragments and NO DATA injection', async () => {
-  const { elm } = await setup('mazda', { tinyFragments: true, noDataRate: 0.3 });
+  const { elm } = await setup('petrol', { tinyFragments: true, noDataRate: 0.3 });
   const init = await elm.init();
   // Init may hit an injected NO DATA on 0100; the adapter part must still work.
   assert.equal(init.adapterId, 'ELM327 v1.5');
@@ -80,7 +80,7 @@ test('survives tiny fragments and NO DATA injection', async () => {
 });
 
 test('survives lost responses (timeouts)', async () => {
-  const { elm } = await setup('mazda', { dropRate: 0.3 });
+  const { elm } = await setup('petrol', { dropRate: 0.3 });
   let ok = 0;
   let timeouts = 0;
   for (let i = 0; i < 15; i++) {
@@ -104,7 +104,7 @@ test('older K-line car: legacy headers, multi-message VIN and DTCs, no mode 0A',
   assert.equal(elm.protocol, 'legacy');
   assert.deepEqual(init.ecus, ['10']);
   const p = await discoverVehicle(elm);
-  assert.equal(p.vin, 'WVWSIMOLDCAR00042');
+  assert.equal(p.vin, 'SIMOLDCAR00000003');
   assert.ok(p.supported01.includes(0x14), 'O2 sensor PIDs discovered');
   const stored = await readDtcs(elm, 0x03);
   assert.deepEqual(stored.codes, ['P0171', 'P0300', 'P0442', 'P0128'], 'codes split over two messages');
@@ -122,7 +122,7 @@ test('diesel on 29-bit CAN: two ECUs, compression monitors, odometer', async () 
   assert.equal(elm.protocol, 'can29');
   assert.deepEqual(init.ecus.sort(), ['18DAF110', '18DAF118']);
   const p = await discoverVehicle(elm);
-  assert.equal(p.vin, 'WF0SIMDIESEL29B01');
+  assert.equal(p.vin, 'SIMDIESEL00000004');
   assert.equal(p.fuelType, 'Diesel');
   const mon = p.monitor['18DAF110'];
   assert.equal(mon.ignition, 'compression');

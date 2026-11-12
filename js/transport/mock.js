@@ -54,11 +54,11 @@ const CAN29 = { dpn: '7', kind: 'can29', name: 'ISO 15765-4 (CAN 29/500)' };
 const K_LINE = { dpn: '3', kind: 'legacy', name: 'ISO 9141-2' };
 
 export const MOCK_PROFILES = {
-  clio: {
-    label: 'Simulator: Clio E-Tech',
-    description: 'Hybrid, 2 ECUs, gateway refuses clearing',
+  hybrid: {
+    label: 'Simulator: hybrid with security gateway',
+    description: 'Two ECUs, engine often off, refuses clearing codes',
     protocol: CAN11,
-    vin: 'VF1SIMC110E7EC401',
+    vin: 'SIMHYBRID00000001',
     hybrid: true,
     fuelType: 0x11, // hybrid petrol
     clear: 'refuse', // security gateway
@@ -80,11 +80,11 @@ export const MOCK_PROFILES = {
     },
     faults: { stored: ['P0420'], pending: ['P0171'], permanent: ['P0420'] },
   },
-  mazda: {
-    label: 'Simulator: Mazda 3',
-    description: 'Single ECU, clearing allowed',
+  petrol: {
+    label: 'Simulator: petrol car',
+    description: 'One ECU, lots of data, clearing allowed',
     protocol: CAN11,
-    vin: 'JMZSIMMAZDA300017',
+    vin: 'SIMPETROL00000002',
     hybrid: false,
     fuelType: 0x01, // petrol
     clear: 'allow',
@@ -103,7 +103,7 @@ export const MOCK_PROFILES = {
     label: 'Simulator: older petrol car',
     description: 'K-line (ISO 9141-2), pre-CAN, 4 stored codes',
     protocol: K_LINE,
-    vin: 'WVWSIMOLDCAR00042',
+    vin: 'SIMOLDCAR00000003',
     hybrid: false,
     fuelType: null,
     clear: 'allow',
@@ -123,7 +123,7 @@ export const MOCK_PROFILES = {
     label: 'Simulator: diesel (29-bit CAN)',
     description: 'Compression-ignition monitors, 2 ECUs',
     protocol: CAN29,
-    vin: 'WF0SIMDIESEL29B01',
+    vin: 'SIMDIESEL00000004',
     hybrid: false,
     diesel: true,
     fuelType: 0x04, // diesel
@@ -455,7 +455,7 @@ export class SimElm {
 }
 
 export class MockTransport {
-  constructor(log, { profile = 'clio', ...opts } = {}) {
+  constructor(log, { profile = 'petrol', ...opts } = {}) {
     this.log = log;
     this.kind = 'mock';
     this.profileName = profile;
@@ -468,7 +468,7 @@ export class MockTransport {
   }
 
   get label() {
-    return MOCK_PROFILES[this.profileName]?.label ?? 'Simulator';
+    return this.opts.label ?? MOCK_PROFILES[this.profileName]?.label ?? 'Simulator';
   }
 
   async connect() {

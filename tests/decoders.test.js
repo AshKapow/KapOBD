@@ -89,7 +89,7 @@ test('DTC descriptions', () => {
 });
 
 test('VIN from CAN and legacy messages', () => {
-  const vin = 'JMZSIMMAZDA300017';
+  const vin = 'SIMPETROL00000002';
   const ascii = [...vin].map((c) => c.charCodeAt(0));
   assert.equal(vinFromMessages([{ ecu: '7E8', bytes: [0x49, 0x02, 0x01, ...ascii] }]).vin, vin);
   const legacy = [];

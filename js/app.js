@@ -10,16 +10,31 @@ import { load, save } from './storage.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const DEFAULT_SETTINGS = {
-  transport: 'ble', // 'ble' | 'sim-clio' | 'sim-mazda'
+  transport: 'ble', // 'ble' | 'sim-<profile>' (simulators: developer mode only)
   showAll: false,
   autoDiscover: true,
   includeFrags: true,
   sim: { noDataRate: 0, dropRate: 0, tinyFragments: false },
 };
 
+// The simulated car behind the public "Try a demo" button.
+export const DEMO_PROFILE = 'petrol';
+
+/** Developer mode (all simulators + error injection): add ?dev to the address. */
+function detectDevMode() {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').has('dev');
+  } catch {
+    return false;
+  }
+}
+
 function loadSettings() {
   const s = load('settings', {});
-  return { ...DEFAULT_SETTINGS, ...s, sim: { ...DEFAULT_SETTINGS.sim, ...(s?.sim ?? {}) } };
+  const merged = { ...DEFAULT_SETTINGS, ...s, sim: { ...DEFAULT_SETTINGS.sim, ...(s?.sim ?? {}) } };
+  // A simulator saved by an older version may no longer exist.
+  if (merged.transport !== 'ble' && !MOCK_PROFILES[String(merged.transport).replace(/^sim-/, '')]) merged.transport = 'ble';
+  return merged;
 }
 
 function friendlyError(err) {
@@ -50,6 +65,8 @@ export const app = {
   settings: loadSettings(),
   previousLog: null,
   bleAvailable: bleAvailable(),
+  devMode: detectDevMode(),
+  demo: false, // connected to the public demo car (nothing is saved)
   _listeners: new Set(),
 
   on(fn) {
@@ -99,18 +116,24 @@ export const app = {
 
   // --- actions ---------------------------------------------------------------
 
-  /** Must be called straight from a tap: no await before transport.connect(). */
-  connect() {
+  /**
+   * Must be called straight from a tap: no await before transport.connect().
+   * Normal mode always uses Bluetooth; { demo: true } uses the demo car;
+   * developer mode (?dev) uses whatever is picked on the Connect screen.
+   */
+  connect({ demo = false } = {}) {
     if (this.busy || this.connected) return;
     const s = this.settings;
+    const kind = demo ? `sim-${DEMO_PROFILE}` : this.devMode ? s.transport : 'ble';
     let t;
-    if (s.transport === 'ble') {
+    if (kind === 'ble') {
       t = new BleTransport(this.logger);
     } else {
-      const profile = s.transport.replace(/^sim-/, '');
+      const profile = kind.replace(/^sim-/, '');
       if (!MOCK_PROFILES[profile]) return this.set({ error: `Unknown simulator ${profile}` });
-      t = new MockTransport(this.logger, { profile, ...s.sim });
+      t = new MockTransport(this.logger, demo ? { profile, label: 'Demo car (simulated)' } : { profile, ...s.sim });
     }
+    this.demo = demo;
     let p;
     try {
       p = t.connect({ showAll: s.showAll });
@@ -160,7 +183,7 @@ export const app = {
     if (!t) return;
     t.ondisconnect = null;
     await t.disconnect();
-    this.set({ status: 'idle', busy: null, elm: null, notice: 'Disconnected.' });
+    this.set({ status: 'idle', busy: null, elm: null, demo: false, notice: 'Disconnected.' });
   },
 
   async _action(label, fn) {
@@ -197,7 +220,13 @@ export const app = {
     await this._action('Asking the car what it supports…', async () => {
       const adapter = { ...(this.transport?.info ?? {}), id: this.init?.adapterId ?? null };
       delete adapter.services;
-      const profile = saveProfile(await discoverVehicle(this.elm, { adapter, onStep: (s) => this.set({ progress: s }) }));
+      const found = await discoverVehicle(this.elm, { adapter, onStep: (s) => this.set({ progress: s }) });
+      if (this.demo) {
+        // The demo car is never saved, so it can't clutter Saved vehicles.
+        this.set({ profile: found, notice: 'This is a simulated demo car: the values are made up and nothing is saved. Have a look at Vehicle and Console.' });
+        return;
+      }
+      const profile = saveProfile(found);
       this.set({ profile, profiles: loadProfiles(), notice: `Vehicle profile saved (${profile.vin ?? 'no VIN reported'}).` });
     });
   },

@@ -20,7 +20,7 @@ const STATUS_TEXT = { idle: 'Not connected', connecting: 'Connecting', connected
 
 function render() {
   const pill = $('status');
-  pill.textContent = app.busy ? 'Working…' : STATUS_TEXT[app.status] ?? app.status;
+  pill.textContent = app.busy ? 'Working…' : app.demo && app.connected ? 'Demo car' : STATUS_TEXT[app.status] ?? app.status;
   pill.dataset.state = app.busy ? 'busy' : app.status;
   if (!$('screen-connect').hidden) renderConnect($('screen-connect'), app);
   if (!$('screen-vehicle').hidden) renderVehicle($('screen-vehicle'), app);

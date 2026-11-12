@@ -226,3 +226,5 @@ select, input[type="text"] {
 @media (min-width: 700px) {
   .choices { grid-template-columns: repeat(3, 1fr); }
 }
+
+.demo { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
