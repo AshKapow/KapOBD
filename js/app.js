@@ -7,6 +7,8 @@ import { BleTransport, bleAvailable } from './transport/ble.js';
 import { MockTransport, MOCK_PROFILES } from './transport/mock.js';
 import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, setNickname } from './vehicle.js';
 import { load, save } from './storage.js';
+import { readAllCodes, checkClearConditions, clearAndVerify } from './diagnostics.js';
+import { loadDtcTable } from './obd/dtc.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const DEFAULT_SETTINGS = {
@@ -14,7 +16,7 @@ const DEFAULT_SETTINGS = {
   showAll: false,
   autoDiscover: true,
   includeFrags: true,
-  sim: { noDataRate: 0, dropRate: 0, tinyFragments: false },
+  sim: { noDataRate: 0, dropRate: 0, tinyFragments: false, parked: false },
 };
 
 // The simulated car behind the public "Try a demo" button.
@@ -67,6 +69,9 @@ export const app = {
   bleAvailable: bleAvailable(),
   devMode: detectDevMode(),
   demo: false, // connected to the public demo car (nothing is saved)
+  diag: null, // last fault-code read (see diagnostics.js readAllCodes)
+  dtcTable: {},
+  clearFlow: null, // { step: 'warn' | 'conditions' | 'confirm' | 'result', ... }
   _listeners: new Set(),
 
   on(fn) {
@@ -131,7 +136,7 @@ export const app = {
     } else {
       const profile = kind.replace(/^sim-/, '');
       if (!MOCK_PROFILES[profile]) return this.set({ error: `Unknown simulator ${profile}` });
-      t = new MockTransport(this.logger, demo ? { profile, label: 'Demo car (simulated)' } : { profile, ...s.sim });
+      t = new MockTransport(this.logger, demo ? { profile, label: 'Demo car (simulated)', parked: true } : { profile, ...s.sim });
     }
     this.demo = demo;
     let p;
@@ -141,7 +146,7 @@ export const app = {
       p = Promise.reject(err);
     }
     this.logger.info(`Connect: ${t.label} (app v${this.version})`);
-    this.set({ status: 'connecting', busy: 'Connecting…', error: null, notice: null, init: null, identify: null, profile: null, snapshot: null });
+    this.set({ status: 'connecting', busy: 'Connecting…', error: null, notice: null, init: null, identify: null, profile: null, snapshot: null, diag: null, clearFlow: null });
     p.then(
       async () => {
         this._attach(t);
@@ -248,6 +253,50 @@ export const app = {
       this.set({ error: friendlyError(err) });
       return null;
     }
+  },
+
+  // --- fault codes ------------------------------------------------------------
+
+  async runReadCodes() {
+    await this._action('Reading fault codes…', async () => {
+      const [diag, dtcTable] = await Promise.all([readAllCodes(this.elm, { onStep: (s) => this.set({ progress: s }) }), loadDtcTable()]);
+      this.set({ diag, dtcTable });
+    });
+  },
+
+  // Clear-codes flow (brief section 7). Each step must be passed in order;
+  // mode 04 is only sent from runClear() at the 'confirm' step.
+  startClear() {
+    if (!this.connected || !this.diag) return;
+    this.set({ clearFlow: { step: 'warn', understood: false }, error: null, notice: null });
+  },
+
+  updateClear(patch) {
+    if (this.clearFlow) this.set({ clearFlow: { ...this.clearFlow, ...patch } });
+  },
+
+  cancelClear() {
+    this.set({ clearFlow: null });
+  },
+
+  async runClearCheck() {
+    if (this.clearFlow?.step !== 'conditions') return;
+    await this._action('Checking the engine is off…', async () => {
+      const check = await checkClearConditions(this.elm, this.profile?.supported01 ?? [0x0c, 0x0d]);
+      this.updateClear({ check, engineOffConfirmed: false });
+    });
+  },
+
+  async runClear() {
+    const f = this.clearFlow;
+    if (f?.step !== 'confirm' || !f.understood || !f.engineOffConfirmed || f.check?.problems?.length) return;
+    this.updateClear({ step: 'sending' });
+    let outcome = null;
+    await this._action('Clearing fault codes…', async () => {
+      outcome = await clearAndVerify(this.elm, { onStep: (s) => this.set({ progress: s }) });
+    });
+    // Whatever happened, show the result; never try again automatically.
+    this.set({ clearFlow: { step: 'result', outcome }, diag: outcome?.after ?? this.diag });
   },
 
   renameProfile(key, nickname) {

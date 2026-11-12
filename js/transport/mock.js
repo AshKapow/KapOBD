@@ -155,7 +155,7 @@ export class SimElm {
     if (!p) throw new Error(`Unknown mock profile ${profileName}`);
     this.profile = p;
     this.kind = p.protocol.kind;
-    this.opts = { latencyMs: 30, noDataRate: 0, dropRate: 0, tinyFragments: false, timeScale: 1, seed: null, ...opts };
+    this.opts = { latencyMs: 30, noDataRate: 0, dropRate: 0, tinyFragments: false, timeScale: 1, seed: null, parked: false, ...opts };
     // A seed makes every "random" event repeatable (tests); otherwise truly random.
     this.random = this.opts.seed == null ? Math.random : seededRandom(this.opts.seed);
     this.emit = emit;
@@ -192,8 +192,10 @@ export class SimElm {
   state() {
     const t = ((Date.now() - this.t0) / 1000) * this.opts.timeScale;
     const cycle = t % 90;
-    const speed = Math.max(0, 55 * (1 - Math.cos((2 * Math.PI * cycle) / 90)) / 2 + Math.sin(t / 3) * 2);
-    const engineOn = this.profile.hybrid ? speed > 38 || (t % 300 > 240 && speed > 5) : true;
+    // parked: ignition on, engine off, stationary (what clearing codes needs).
+    const parked = !!this.opts.parked;
+    const speed = parked ? 0 : Math.max(0, 55 * (1 - Math.cos((2 * Math.PI * cycle) / 90)) / 2 + Math.sin(t / 3) * 2);
+    const engineOn = parked ? false : this.profile.hybrid ? speed > 38 || (t % 300 > 240 && speed > 5) : true;
     const idle = this.profile.diesel ? 820 : 750;
     const rpm = engineOn ? (this.profile.hybrid ? 1250 + speed * 22 : idle + speed * 30) + Math.sin(t) * 30 : 0;
     const load = engineOn ? 18 + speed * 0.6 + Math.sin(t * 1.3) * 4 : 0;

@@ -207,7 +207,7 @@ select, input[type="text"] {
   bottom: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--panel);
   border-top: 1px solid var(--line);
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -228,3 +228,37 @@ select, input[type="text"] {
 }
 
 .demo { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
+
+/* --- Codes screen --- */
+.btn.danger { background: #b3261e; border-color: #b3261e; color: #fff; }
+.btn.danger[data-armed] { background: #ff6b6b; border-color: #ff6b6b; color: #1a0505; }
+.summary .lamp { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+.summary .lamp .dot, .readiness .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; }
+.summary .lamp.on .dot { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+.summary .lamp.off .dot { background: #3a434d; }
+.summary .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 4px; }
+.count { background: var(--panel-2); border-radius: 10px; padding: 8px; text-align: center; display: flex; flex-direction: column; }
+.count strong { font-size: 26px; line-height: 1.1; }
+.count span { color: var(--muted); font-size: 13px; }
+.count.has strong { color: var(--warn); }
+.readiness > summary { display: flex; align-items: center; gap: 10px; }
+.readiness .dot { margin-right: 2px; }
+.readiness.ready .dot { background: var(--ok); }
+.readiness.almost .dot { background: var(--warn); }
+.readiness.not-ready .dot { background: var(--err); }
+.readiness.unknown .dot { background: #3a434d; }
+.codes { list-style: none; margin: 0; padding: 0; }
+.code { display: grid; grid-template-columns: 72px 1fr; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.code:first-child { border-top: 0; }
+.code > code { font-size: 17px; font-weight: 700; padding-top: 1px; }
+.code.stored > code { color: var(--warn); }
+.code.permanent > code { color: var(--err); }
+.code small { color: var(--muted); }
+.none { color: var(--ok); margin: 4px 0 0; }
+.flow .step { color: var(--muted); margin: 0 0 4px; font-size: 14px; }
+.flow ol, .warnlist { padding-left: 20px; }
+.warnlist li, .flow ol li { margin: 6px 0; }
+.flow .good { color: var(--ok); }
+.flow .warn { color: var(--warn); }
+.flow .bad { color: var(--err); }
+.tabs a { font-size: 15px; }
