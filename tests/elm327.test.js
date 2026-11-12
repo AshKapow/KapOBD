@@ -50,17 +50,18 @@ test('ignores padding after the PCI length', () => {
 });
 
 test('reassembles multi-frame (ISO-TP) VIN with headers on', () => {
-  const raw = '7E81014490201564631\r7E82153494D43313130\r7E82245374543343031\r';
+  // First frame (10 14 = 20 bytes) + two consecutive frames (21, 22).
+  const raw = '7E8101449020153494D\r7E82148594252494430\r7E82230303030303031\r';
   const r = parseResponse(raw, { cmd: '0902', headers: true });
   assert.equal(r.messages.length, 1);
   const vin = String.fromCharCode(...r.messages[0].bytes.slice(3));
-  assert.equal(vin, 'VF1SIMC110E7EC401');
+  assert.equal(vin, 'SIMHYBRID00000001');
 });
 
 test('reassembles multi-frame with headers off', () => {
-  const raw = '014\r0: 49 02 01 56 46 31\r1: 53 49 4D 43 31 31 30\r2: 45 37 45 43 34 30 31\r';
+  const raw = '014\r0: 49 02 01 53 49 4D\r1: 48 59 42 52 49 44 30\r2: 30 30 30 30 30 30 31\r';
   const r = parseResponse(raw, { cmd: '0902', headers: false });
-  assert.equal(String.fromCharCode(...r.messages[0].bytes.slice(3)), 'VF1SIMC110E7EC401');
+  assert.equal(String.fromCharCode(...r.messages[0].bytes.slice(3)), 'SIMHYBRID00000001');
 });
 
 test('strips echo, SEARCHING and spaces', () => {
