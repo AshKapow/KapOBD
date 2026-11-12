@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1216" />
+    <meta name="color-scheme" content="dark" />
+    <title>KapOBD</title>
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1><span data-name>KapOBD</span> <small data-version></small></h1>
+      <span id="status" class="pill" data-state="idle">Not connected</span>
+    </header>
+
+    <main>
+      <section id="screen-connect" class="screen"></section>
+      <section id="screen-vehicle" class="screen" hidden></section>
+      <section id="screen-console" class="screen" hidden></section>
+      <section id="screen-about" class="screen" hidden>
+        <h2>About</h2>
+        <div class="card">
+          <p><strong>Disclaimer.</strong> The app reads standard diagnostic data and is not a substitute for professional diagnosis. Clearing codes does not repair faults. Do not interact with the app while driving.</p>
+        </div>
+        <div class="card">
+          <p>Version <span data-version></span>. Connects to an ELM327-compatible Bluetooth LE adapter (tested target: Veepeak OBDCheck BLE+). On iPhone and iPad it needs the Bluefy browser, because Safari has no Web Bluetooth.</p>
+          <p>It only ever sends adapter (AT) commands and the read-only OBD-II modes 01, 02, 03, 07, 09 and 0A. Mode 04 (clear codes) is only sent from a confirmation flow, and never retried automatically.</p>
+          <p>Vehicle profiles, settings and the last session’s log are kept on this device only.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="tabs" aria-label="Screens">
+      <a href="#connect">Connect</a>
+      <a href="#vehicle">Vehicle</a>
+      <a href="#console">Console</a>
+      <a href="#about">About</a>
+    </nav>
+
+    <noscript><p class="msg error">This app needs JavaScript.</p></noscript>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
