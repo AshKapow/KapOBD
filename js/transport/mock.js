@@ -17,6 +17,18 @@ const u32 = (v) => {
 };
 const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, '0');
 
+/** Small deterministic PRNG (mulberry32) for repeatable simulations. */
+function seededRandom(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function encodeDtc(code) {
   const letter = 'PCBU'.indexOf(code[0]);
   const d = code.slice(1).split('').map((c) => parseInt(c, 16));
@@ -143,7 +155,9 @@ export class SimElm {
     if (!p) throw new Error(`Unknown mock profile ${profileName}`);
     this.profile = p;
     this.kind = p.protocol.kind;
-    this.opts = { latencyMs: 30, noDataRate: 0, dropRate: 0, tinyFragments: false, timeScale: 1, ...opts };
+    this.opts = { latencyMs: 30, noDataRate: 0, dropRate: 0, tinyFragments: false, timeScale: 1, seed: null, ...opts };
+    // A seed makes every "random" event repeatable (tests); otherwise truly random.
+    this.random = this.opts.seed == null ? Math.random : seededRandom(this.opts.seed);
     this.emit = emit;
     this.t0 = Date.now();
     this.inbuf = '';
@@ -280,7 +294,7 @@ export class SimElm {
       }
       if (!ecu.pids01.includes(pid)) return null;
       // Hybrid engine computer sometimes skips a reply while the engine is stopped.
-      if (this.profile.hybrid && ecu.name === 'engine' && !s.engineOn && Math.random() < 0.1) return null;
+      if (this.profile.hybrid && ecu.name === 'engine' && !s.engineOn && this.random() < 0.1) return null;
       const data = this.encodePid(pid, s, ecu);
       return data ? [[0x41, pid, ...data]] : null;
     }
@@ -408,7 +422,7 @@ export class SimElm {
       delay += this.kind === 'legacy' ? 2500 : 1200;
       this.searched = true;
     }
-    if (Math.random() < this.opts.noDataRate) return this.reply([...echo, ...notices, 'NO DATA'], delay + 200);
+    if (this.random() < this.opts.noDataRate) return this.reply([...echo, ...notices, 'NO DATA'], delay + 200);
 
     const s = this.state();
     const answers = [];
@@ -423,12 +437,12 @@ export class SimElm {
   }
 
   reply(lines, delay) {
-    if (Math.random() < this.opts.dropRate) return; // simulate a lost response
+    if (this.random() < this.opts.dropRate) return; // simulate a lost response
     const eol = this.linefeeds ? '\r\n' : '\r';
     const out = lines.join(eol) + eol + eol + '>';
     const chunks = [];
     for (let i = 0; i < out.length; ) {
-      const n = this.opts.tinyFragments ? 1 + Math.floor(Math.random() * 6) : 20;
+      const n = this.opts.tinyFragments ? 1 + Math.floor(this.random() * 6) : 20;
       chunks.push(out.slice(i, i + n));
       i += n;
     }

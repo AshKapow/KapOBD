@@ -101,4 +101,4 @@ KapOBD is plain HTML and JavaScript with no build step. [Download the code](http
 node tools/serve.js
 ```
 
-Then open http://localhost:8080 in Chrome on the same computer. Technical notes are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Then open http://localhost:8080 in Chrome on the same computer.
