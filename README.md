@@ -6,11 +6,12 @@
 
 - **Live data:** speed, RPM, temperatures, battery voltage, fuel level, hybrid battery and more. It only shows what your car actually reports. *(For now you can read every value once; a live dashboard is coming soon.)*
 - **Vehicle check:** the warning-light status, how many fault codes are stored, and the readiness monitors, which tell you whether an emissions test (e.g. an MOT) is likely to pass.
-- **Fault codes:** stored, pending and permanent, with plain-English descriptions *(coming soon)*.
+- **Fault codes:** stored, pending and permanent, with plain-English descriptions and the freeze frame (what the engine was doing when the fault happened).
+- **Clear codes:** turn the warning light off after a repair, with clear warnings, an engine-off check and two confirmations first.
 - **Several cars:** each car is remembered by its VIN, and you can give it a name.
 - **Read-only by design.** See [Safety](#safety).
 
-KapOBD is an early version. Connecting, reading what the car supports and reading values all work now. A live dashboard and the fault-code screens are on the way.
+KapOBD is an early version. Connecting, reading values, and reading and clearing fault codes all work now. A live dashboard with graphs is on the way.
 
 ---
 
@@ -53,6 +54,19 @@ Open https://ashkapow.github.io/KapOBD/ with Bluetooth turned on: in Chrome on A
 5. Open **Vehicle** to see what your car supports, whether the warning light is on, and the readiness monitors. **Read every value once** reads each supported value.
 6. Under *Saved vehicles*, use **Rename** to give each car a name you'll recognise.
 
+### Fault codes
+
+1. Open **Codes** and tap **Read fault codes**.
+2. You'll see whether the engine warning light is on, then:
+   - **Stored** codes: confirmed faults. These usually turn the warning light on.
+   - **Pending** codes: faults seen once but not yet confirmed.
+   - **Permanent** codes: only the car can remove these, once the fault is fixed.
+   - **Readiness:** whether the car's emissions self-checks have completed.
+   - **Freeze frame:** what the engine was doing when the fault was stored.
+3. To clear codes after a repair, tap **Clear codes…** and follow the three steps: read the warnings, switch the engine off with the ignition on (KapOBD checks), then tap **Clear codes now** twice. KapOBD reads the codes again afterwards to check.
+
+Clearing codes doesn't fix anything; if the fault is still there, the code comes back. It also resets the readiness monitors, so an emissions test (such as an MOT) may fail until the car has been driven for a few days. Some cars with a security gateway refuse to clear codes with a generic tool. KapOBD tells you if that happens and never tries again on its own.
+
 ### Tips
 
 - **Hybrids:** the engine is often off while the car is on, so RPM 0 or some missing engine values are normal.
@@ -88,7 +102,7 @@ KapOBD only ever sends:
 - adapter setup commands (`AT…`), except a few that could reconfigure or flood the adapter
 - the read-only OBD-II requests for live data, freeze-frame data, fault codes and the VIN (modes `01`, `02`, `03`, `07`, `09` and `0A`)
 
-Clearing fault codes (mode `04`) will only be possible through a dedicated screen with warnings and two confirmations. It's never sent from the Console and never retried automatically. Anything that could write to, reset or unlock a car's computers is refused before it reaches the adapter.
+Clearing fault codes (mode `04`) is only possible from the **Codes** screen, after the warnings, an engine-off check and two confirmations. It's sent once, never from the Console, and never retried automatically. Anything that could write to, reset or unlock a car's computers is refused before it reaches the adapter.
 
 **Disclaimer:** KapOBD reads standard diagnostic data and is not a substitute for professional diagnosis. Clearing codes doesn't repair faults. Don't use the app while driving.
 

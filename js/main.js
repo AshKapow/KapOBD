@@ -2,9 +2,10 @@
 import { app } from './app.js';
 import { renderConnect } from './ui/connect.js';
 import { renderVehicle } from './ui/vehicle.js';
+import { renderDiagnostics } from './ui/diagnostics.js';
 import { mountConsole } from './ui/log.js';
 
-const SCREENS = ['connect', 'vehicle', 'console', 'about'];
+const SCREENS = ['connect', 'vehicle', 'codes', 'console', 'about'];
 const $ = (id) => document.getElementById(id);
 
 function route() {
@@ -24,6 +25,7 @@ function render() {
   pill.dataset.state = app.busy ? 'busy' : app.status;
   if (!$('screen-connect').hidden) renderConnect($('screen-connect'), app);
   if (!$('screen-vehicle').hidden) renderVehicle($('screen-vehicle'), app);
+  if (!$('screen-codes').hidden) renderDiagnostics($('screen-codes'), app);
 }
 
 for (const el of document.querySelectorAll('[data-version]')) el.textContent = `v${app.version}`;

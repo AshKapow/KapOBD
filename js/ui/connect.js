@@ -110,10 +110,11 @@ function simOptions(app) {
   return h(
     'details',
     { class: 'options' },
-    h('summary', {}, 'Simulator error injection'),
+    h('summary', {}, 'Simulator options'),
     rateSelect('Reply with NO DATA', 'noDataRate', s, app),
     rateSelect('Lose responses (timeouts)', 'dropRate', s, app),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.sim.tinyFragments, onchange: (e) => app.updateSettings({ sim: { tinyFragments: e.target.checked } }) }), 'Tiny Bluetooth fragments (1–6 bytes)'),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.sim.parked, onchange: (e) => app.updateSettings({ sim: { parked: e.target.checked } }) }), 'Car parked: ignition on, engine off (needed to test clearing codes)'),
     h('p', { class: 'hint' }, 'Applies when you next connect.'),
   );
 }
