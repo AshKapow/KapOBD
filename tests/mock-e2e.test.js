@@ -9,7 +9,7 @@ import { readDtcs, clearCodes, readPid } from '../js/obd/modes.js';
 
 async function setup(profile, opts = {}) {
   const log = new Logger();
-  const t = new MockTransport(log, { profile, latencyMs: 1, connectDelayMs: 0, ...opts });
+  const t = new MockTransport(log, { profile, latencyMs: 1, connectDelayMs: 0, seed: 1234, ...opts });
   await t.connect();
   // Shorten the simulator's built-in delays so tests run quickly.
   const sim = t.sim;
