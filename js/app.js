@@ -115,6 +115,8 @@ export const app = {
   batteryTest: null, // { step, skipCrank, live, resting, crankMin, charging, ... }
   batteryResults: load('battery', {}), // last battery test per vehicle
   report: null, // { title, html, text }
+  offline: 'checking', // offline copy: 'checking' | 'ready' | 'unavailable'
+  online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
   live: null, // LivePoller while the Live screen is polling
   liveDetail: null, // PID shown full-screen on the Live screen
   liveSeconds: 60, // graph window on the detail view
