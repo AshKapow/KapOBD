@@ -54,6 +54,12 @@ jobs:
           git show "$GITHUB_SHA:tools/build-site.sh" > "$RUNNER_TEMP/build-site.sh"
           bash "$RUNNER_TEMP/build-site.sh" _site
       - uses: actions/configure-pages@v6
+      # One artifact name per attempt, so "Re-run failed jobs" doesn't find
+      # the previous attempt's upload too and refuse to deploy.
       - uses: actions/upload-pages-artifact@v5
+        with:
+          name: github-pages-${{ github.run_attempt }}
       - id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
