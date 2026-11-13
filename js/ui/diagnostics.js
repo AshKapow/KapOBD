@@ -5,6 +5,8 @@ import { describeDtc, dtcSystem } from '../obd/dtc.js';
 import { formatValue } from '../obd/pids.js';
 import { ecuLabel } from '../vehicle.js';
 import { readinessSummary, countCodes } from '../diagnostics.js';
+import { readinessTip, GENERAL_ADVICE } from '../obd/readiness-guide.js';
+import { historyFor } from '../history.js';
 
 export function renderDiagnostics(el, app) {
   const d = app.diag;
@@ -35,7 +37,9 @@ function results(app, d, disabled) {
     codeSection(app, 'Pending codes', 'Faults seen once but not yet confirmed. They may become stored codes or clear by themselves.', d.pending, 'pending'),
     codeSection(app, 'Permanent codes', 'Can’t be cleared with a scan tool. The car removes them itself once the fault is fixed and it has re-checked.', d.permanent, 'permanent'),
     d.freeze ? freezeCard(app, d.freeze) : null,
+    selfTestCard(app, disabled),
     clearOffer(app, n, ready, disabled),
+    historyCard(app),
   ];
 }
 
@@ -72,13 +76,111 @@ function readinessCard(ready) {
     { class: `card readiness ${ready.state}` },
     h('summary', {}, h('span', { class: 'dot' }), `Readiness: ${READY_TEXT[ready.state]}`),
     ready.monitors.length
-      ? h('ul', { class: 'monitors' }, ready.monitors.map((m) => h('li', { class: m.status === 'ready' ? 'ready' : 'notready' }, `${m.name}: ${m.status}`)))
+      ? h(
+          'ul',
+          { class: 'monitors' },
+          ready.monitors.map((m) =>
+            h(
+              'li',
+              { class: m.status === 'ready' ? 'ready' : 'notready' },
+              `${m.name}: ${m.status}`,
+              m.status !== 'ready' && readinessTip(m.name) ? h('small', { class: 'tip' }, readinessTip(m.name)) : null,
+            ),
+          ),
+        )
       : null,
+    ready.notReady.length ? h('p', { class: 'hint' }, GENERAL_ADVICE) : null,
     h(
       'p',
       { class: 'hint' },
       'Readiness monitors are the car’s own emissions self-checks. After codes are cleared or the battery is disconnected they reset to “not ready” and complete again over a few days of normal mixed driving. Some emissions inspections check them, and in the UK a lit engine warning light is an MOT failure.',
     ),
+  );
+}
+
+// --- self-test results (mode 06) -------------------------------------------------
+
+const num = (n) => (typeof n !== 'number' ? String(n) : Number.isInteger(n) ? n.toLocaleString('en-GB') : n.toFixed(Math.abs(n) >= 100 ? 0 : 2));
+
+function selfTestCard(app, disabled) {
+  const r = app.selfTests;
+  const read = h('button', { class: 'btn', disabled, onclick: () => app.runSelfTests() }, r ? 'Read again' : 'Read self-test results');
+  const intro = h('p', { class: 'hint' }, 'The car’s own pass/fail results for its emissions checks (catalyst, O2 sensors, misfire counts and more). A result outside its limits can point to a developing problem before a fault code appears.');
+  if (!r) return h('section', { class: 'card' }, h('h3', {}, 'Self-test results'), intro, read);
+  if (!r.supported) return h('section', { class: 'card' }, h('h3', {}, 'Self-test results'), h('p', { class: 'hint' }, r.reason), read);
+  const anyUnknown = r.monitors.some((m) => m.tests.some((t) => !t.known));
+  return h(
+    'section',
+    { class: 'card' },
+    h('h3', {}, 'Self-test results'),
+    h('p', { class: r.failed.length ? 'result-bad' : 'result-good' }, r.failed.length ? `✗ ${r.failed.length} result${r.failed.length === 1 ? '' : 's'} outside the car’s limits` : '✓ All results within the car’s limits'),
+    r.monitors.map((m) =>
+      h(
+        'details',
+        { class: 'selftest', open: m.tests.some((t) => !t.passed) },
+        h('summary', {}, m.tests.some((t) => !t.passed) ? '✗ ' : '✓ ', m.name, h('small', { class: 'muted' }, ` · ${ecuLabel(m.ecu)}`)),
+        h(
+          'table',
+          { class: 'table' },
+          h('tbody', {},
+            m.tests.map((t) =>
+              h(
+                'tr',
+                { class: t.passed ? '' : 'fail' },
+                h('td', {}, t.name),
+                h('td', {}, `${num(t.value)}${t.unit ? ' ' + t.unit : ''}`, h('br'), h('small', { class: 'muted' }, `limits ${num(t.min)} to ${num(t.max)}`)),
+                h('td', {}, t.passed ? 'Pass' : 'Outside limits'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    anyUnknown ? h('p', { class: 'hint' }, 'Some results use units KapOBD doesn’t recognise, so they’re shown as raw numbers. Pass or fail is still correct.') : null,
+    intro,
+    read,
+  );
+}
+
+// --- code history ----------------------------------------------------------------
+
+function historyCard(app) {
+  if (!app.profile) return null;
+  if (app.demo) return null;
+  const { entries, clears } = historyFor(app.history, app.profile.key);
+  if (!entries.length && !clears.length) return null;
+  const day = (t) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return h(
+    'details',
+    { class: 'card' },
+    h('summary', {}, `History for this car (${entries.length} code${entries.length === 1 ? '' : 's'})`),
+    h(
+      'ul',
+      { class: 'codes history' },
+      entries.map((e) =>
+        h(
+          'li',
+          { class: `code ${e.kind}${e.goneAt ? ' gone' : ''}` },
+          h('code', {}, e.code),
+          h(
+            'div',
+            {},
+            h('div', { class: 'desc' }, describeDtc(e.code, app.dtcTable), h('small', { class: 'muted' }, ` · ${e.kind}`)),
+            h(
+              'small',
+              {},
+              e.goneAt ? `Gone since ${day(e.goneAt)}` : 'Still present',
+              ` · first seen ${day(e.firstSeen)} · seen ${e.timesSeen} time${e.timesSeen === 1 ? '' : 's'}`,
+              e.returned ? ` · came back ${e.returned} time${e.returned === 1 ? '' : 's'}` : '',
+            ),
+          ),
+        ),
+      ),
+    ),
+    clears.length
+      ? h('p', { class: 'hint' }, 'Clear attempts: ', clears.slice(0, 5).map((c) => `${day(c.t)} (${c.status === 'cleared' && c.verified ? 'cleared' : c.status})`).join(', '))
+      : null,
+    h('p', { class: 'hint' }, 'Kept on this device each time you read the codes. A code that keeps coming back usually means the fault is still there.'),
   );
 }
 

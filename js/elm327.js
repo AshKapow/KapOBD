@@ -7,7 +7,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Safety allow-list (brief section 8). Everything sent goes through here.
 // ---------------------------------------------------------------------------
 
-export const ALLOWED_MODES = ['01', '02', '03', '04', '07', '09', '0A'];
+// 06 (on-board monitor test results, read-only) added at the owner's request, 2026-11-13.
+export const ALLOWED_MODES = ['01', '02', '03', '04', '06', '07', '09', '0A'];
 
 // AT commands that are blocked even though AT commands are generally allowed.
 const BLOCKED_AT = [
@@ -17,7 +18,7 @@ const BLOCKED_AT = [
 ];
 
 // Exact request lengths in hex characters (mode byte included).
-const LENGTHS = { '01': [4, 14], '02': [6, 6], '03': [2, 2], '04': [2, 2], '07': [2, 2], '09': [4, 4], '0A': [2, 2], '22': [6, 6] };
+const LENGTHS = { '01': [4, 14], '02': [6, 6], '03': [2, 2], '04': [2, 2], '06': [4, 4], '07': [2, 2], '09': [4, 4], '0A': [2, 2], '22': [6, 6] };
 
 export function normalizeCommand(cmd) {
   return String(cmd ?? '').toUpperCase().replace(/\s+/g, '');
