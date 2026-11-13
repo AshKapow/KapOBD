@@ -263,3 +263,56 @@ select, input[type="text"] {
 .flow .bad { color: var(--err); }
 .tabs a { font-size: 15px; }
 .preview-badge { font-size: 12px; font-weight: 600; color: #1a1200; background: var(--warn); border-radius: 999px; padding: 2px 8px; vertical-align: 2px; }
+
+/* --- Live screen --- */
+.live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.live-head h2 { margin-bottom: 8px; }
+.engine { font-size: 14px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); color: var(--text); white-space: nowrap; }
+.engine::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 0; background: var(--muted); }
+.engine[data-state="running"]::before { background: var(--warn); }
+.engine[data-state="electric"]::before { background: var(--ok); }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+@media (min-width: 700px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tile {
+  display: flex; flex-direction: column; align-items: flex-start; text-align: left;
+  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 12px 6px; min-height: 120px; cursor: pointer; touch-action: manipulation;
+}
+.tile:active { background: var(--panel-2); }
+.tile-name { color: var(--muted); font-size: 13px; line-height: 1.2; }
+.tile-value { margin-top: 4px; }
+.tile-value .num { font-size: 30px; font-weight: 650; line-height: 1.1; }
+.tile-value .unit, .drive-value .unit, .detail-value .unit { color: var(--muted); font-size: 15px; margin-left: 2px; }
+.tile-sub { color: var(--muted); font-size: 12px; min-height: 16px; }
+.tile.stale .num, .drive-tile.stale .num { color: var(--muted); }
+.spark { width: 100%; height: 40px; margin-top: 4px; display: block; }
+.card.sim { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.detail-value { margin: 0 0 8px; }
+.detail-value .num { font-size: 48px; font-weight: 650; line-height: 1.05; }
+.segmented { display: inline-flex; gap: 6px; margin-bottom: 8px; }
+.segmented .btn.selected { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.chart-wrap { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; }
+.chart { width: 100%; height: 240px; display: block; touch-action: none; }
+.chart-tip { position: absolute; top: 8px; width: 110px; background: #0a0c0f; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; pointer-events: none; display: flex; flex-direction: column; }
+.chart-tip strong { font-size: 15px; }
+.chart-tip span { color: var(--muted); font-size: 12px; }
+.stats { margin-top: 12px; }
+.picker { list-style: none; margin: 0; padding: 0; }
+.picker li { border-top: 1px solid var(--line); }
+.picker li:first-child { border-top: 0; }
+.picker .check { min-height: 48px; }
+
+/* Driving view: big numbers, no menus, nothing fiddly to tap. */
+body.driving .top, body.driving .tabs { display: none; }
+body.driving main { padding-top: 12px; }
+.drive-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.drive-tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; min-height: 30vh; display: flex; flex-direction: column; justify-content: space-between; }
+.drive-tile .tile-name { font-size: 16px; }
+.drive-value .num { font-size: clamp(44px, 14vw, 110px); font-weight: 700; line-height: 1; }
+.drive-engine { text-align: center; margin: 14px 0; }
+.drive-engine .engine { font-size: 18px; padding: 8px 16px; }
+.btn.drive-exit { width: 100%; min-height: 72px; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .drive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .drive-tile { min-height: 50vh; }
+}

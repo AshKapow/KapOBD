@@ -19,24 +19,27 @@ async function setup(profile, opts = {}) {
   return { log, t, elm, sim };
 }
 
-test('Hybrid with gateway: init, two ECUs, VIN, hybrid PID 5B', async () => {
+test('Hybrid with gateway (real layout): 29-bit CAN, five ECUs, VIN, PIDs 5B and 9A', async () => {
   const { elm, sim } = await setup('hybrid');
   const init = await elm.init();
   assert.equal(init.ok, true, init.error);
   assert.equal(init.adapterId, 'ELM327 v1.5');
-  assert.equal(init.protocol, 'A6');
-  assert.deepEqual(init.ecus.sort(), ['7E8', '7EA']);
+  assert.equal(init.protocol, 'A7');
+  assert.deepEqual(init.ecus.sort(), ['18DAF115', '18DAF1DA', '18DAF1DB', '18DAF1DF', '18DAF1E3']);
   assert.equal(elm.headers, true);
   assert.ok(!sim.received.includes(''), 'never sends an empty line');
 
   const p = await discoverVehicle(elm);
   assert.equal(p.vin, 'SIMHYBRID00000001');
-  assert.deepEqual(Object.keys(p.ecus).sort(), ['7E8', '7EA']);
-  assert.ok(p.ecus['7EA'].supported01.includes(0x5b));
-  assert.ok(p.ecus['7E8'].supported01.includes(0x5c));
-  assert.equal(p.fuelType, 'Hybrid petrol');
-  assert.equal(p.monitor['7E8'].mil, true);
-  assert.equal(p.monitor['7E8'].dtcCount, 1);
+  assert.equal(Object.keys(p.ecus).length, 5);
+  assert.equal(p.ecus['18DAF115'].supported01.length, 50, 'engine computer supports 50 PIDs, as in the field log');
+  assert.ok(p.ecus['18DAF1DA'].supported01.includes(0x9a));
+  for (const e of Object.values(p.ecus)) assert.ok(e.supported01.includes(0x5b), 'every computer reports 5B');
+  assert.ok(!p.supported01.includes(0x2f), 'no fuel level on this car');
+  assert.equal(p.fuelType, 'Petrol', 'the real car reports petrol');
+  assert.equal(p.monitor['18DAF115'].mil, true);
+  assert.equal(p.monitor['18DAF115'].dtcCount, 1);
+  assert.equal(p.monitor['18DAF1DA'].mil, false);
 });
 
 test('Hybrid with gateway: stored/pending/permanent codes, clearing refused, no retry', async () => {

@@ -4,14 +4,15 @@
 
 **Open the app:** https://ashkapow.github.io/KapOBD/ (no adapter yet? Tap **Try a demo with a simulated car** to look around first).
 
-- **Live data:** speed, RPM, temperatures, battery voltage, fuel level, hybrid battery and more. It only shows what your car actually reports. *(For now you can read every value once; a live dashboard is coming soon.)*
+- **Live dashboard:** speed, RPM, temperatures, battery voltage, fuel level, hybrid battery and more, updating several times a second with a trend graph on each value. It only shows what your car actually reports.
+- **Driving view:** up to four values in huge numbers, with nothing fiddly to tap.
 - **Vehicle check:** the warning-light status, how many fault codes are stored, and the readiness monitors, which tell you whether an emissions test (e.g. an MOT) is likely to pass.
 - **Fault codes:** stored, pending and permanent, with plain-English descriptions and the freeze frame (what the engine was doing when the fault happened).
 - **Clear codes:** turn the warning light off after a repair, with clear warnings, an engine-off check and two confirmations first.
 - **Several cars:** each car is remembered by its VIN, and you can give it a name.
 - **Read-only by design.** See [Safety](#safety).
 
-KapOBD is an early version. Connecting, reading values, and reading and clearing fault codes all work now. A live dashboard with graphs is on the way.
+KapOBD is an early version: the live dashboard and reading and clearing fault codes all work now. Recording drives and trip summaries are on the way.
 
 ---
 
@@ -54,6 +55,16 @@ Open https://ashkapow.github.io/KapOBD/ with Bluetooth turned on: in Chrome on A
 5. Open **Vehicle** to see what your car supports, whether the warning light is on, and the readiness monitors. **Read every value once** reads each supported value.
 6. Under *Saved vehicles*, use **Rename** to give each car a name you'll recognise.
 
+### Live data
+
+1. Open **Live**. KapOBD starts reading the car's values straight away and keeps going while the Live screen is open.
+2. Each tile shows the latest value and a small graph of the last minute. A greyed-out value means the car hasn't answered for a few seconds.
+3. Tap a tile for a big graph of the last minute or five minutes. Touch the graph to read the value at any moment, with the lowest, highest and average underneath.
+4. **Choose values** picks which tiles to show (up to eight, saved for each car) and sets the units: mph or km/h, °C or °F, miles or km.
+5. **Driving view** shows the first four tiles in large numbers with nothing else on screen. If the Live screen is open when the car starts moving (above 5 mph for a few seconds), KapOBD switches to it by itself, so there's nothing to tap on the road. You can turn that off under **Choose values**. Set everything up before you drive, keep the phone in a holder, and don't use it while driving.
+
+On hybrids, the badge at the top shows when the engine is off and the car is driving on electric power. Engine values like RPM often stop updating while the engine is off; that's normal.
+
 ### Fault codes
 
 1. Open **Codes** and tap **Read fault codes**.
@@ -72,7 +83,7 @@ Clearing codes doesn't fix anything; if the fault is still there, the code comes
 - **Hybrids:** the engine is often off while the car is on, so RPM 0 or some missing engine values are normal.
 - Keep the screen on while you use it. Phones can drop the Bluetooth connection when the browser goes into the background or the screen locks.
 - Unplug the adapter when you've finished. Some adapters stay powered and can slowly drain the car battery.
-- **No adapter yet?** Tap **Try a demo with a simulated car** on the Connect screen to look around first. The demo values are made up and nothing is saved.
+- **No adapter yet?** Tap **Try a demo with a simulated car** on the Connect screen to look around first. The demo car starts parked; on the Live screen, tap **Start a demo drive** to see the values move. The demo values are made up and nothing is saved.
 
 ---
 

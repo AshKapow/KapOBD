@@ -1,11 +1,12 @@
-// Start-up and screen routing (#connect, #vehicle, #console, #about).
+// Start-up and screen routing (#connect, #live, #codes, #vehicle, #console, #about).
 import { app } from './app.js';
 import { renderConnect } from './ui/connect.js';
 import { renderVehicle } from './ui/vehicle.js';
 import { renderDiagnostics } from './ui/diagnostics.js';
+import { renderDashboard, updateDashboard } from './ui/dashboard.js';
 import { mountConsole } from './ui/log.js';
 
-const SCREENS = ['connect', 'vehicle', 'codes', 'console', 'about'];
+const SCREENS = ['connect', 'live', 'codes', 'vehicle', 'console', 'about'];
 const $ = (id) => document.getElementById(id);
 
 function route() {
@@ -14,6 +15,9 @@ function route() {
     $(`screen-${s}`).hidden = s !== name;
     document.querySelector(`nav a[href="#${s}"]`)?.setAttribute('aria-current', s === name ? 'page' : 'false');
   }
+  // Live polling only runs while the Live screen is open.
+  if (name === 'live') app.startLive();
+  else app.stopLive();
   render();
 }
 
@@ -26,6 +30,13 @@ function render() {
   if (!$('screen-connect').hidden) renderConnect($('screen-connect'), app);
   if (!$('screen-vehicle').hidden) renderVehicle($('screen-vehicle'), app);
   if (!$('screen-codes').hidden) renderDiagnostics($('screen-codes'), app);
+  if (!$('screen-live').hidden) {
+    // Connected (or discovery finished) while already on the Live screen.
+    if (!app.live && app.canGoLive) app.startLive();
+    renderDashboard($('screen-live'), app);
+  } else {
+    document.body.classList.remove('driving');
+  }
 }
 
 for (const el of document.querySelectorAll('[data-version]')) el.textContent = `v${app.version}`;
@@ -39,6 +50,9 @@ for (const el of document.querySelectorAll('[data-name]')) el.textContent = app.
 document.title = app.name;
 mountConsole($('screen-console'), app);
 app.on(render);
+app.onLive(() => updateDashboard($('screen-live'), app));
+// Values can stop arriving (engine computer quiet), so refresh staleness/engine state too.
+setInterval(() => app.live && updateDashboard($('screen-live'), app), 1000);
 window.addEventListener('hashchange', route);
 route();
 app.logger.info(`${app.name} v${app.version} started. ${app.bleAvailable ? 'Web Bluetooth available.' : 'No Web Bluetooth in this browser.'}`);

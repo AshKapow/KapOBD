@@ -53,6 +53,7 @@ export function renderConnect(el, app) {
       ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.autoDiscover, onchange: (e) => app.updateSettings({ autoDiscover: e.target.checked }) }), 'Discover the vehicle automatically after init')
       : null,
     !connected ? h('p', { class: 'hint' }, 'Plug the adapter into the car’s OBD port, switch the ignition on (the engine can stay off), then tap Connect.') : null,
+    h('p', { class: 'hint' }, h('a', { href: '#about' }, 'About KapOBD, safety and privacy')),
   );
 }
 
