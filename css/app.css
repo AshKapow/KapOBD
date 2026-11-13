@@ -228,7 +228,6 @@ select, input[type="text"] {
 }
 
 .demo { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
-<<<<<<< Updated upstream
 
 /* --- Codes screen --- */
 .btn.danger { background: #b3261e; border-color: #b3261e; color: #fff; }
@@ -263,6 +262,4 @@ select, input[type="text"] {
 .flow .warn { color: var(--warn); }
 .flow .bad { color: var(--err); }
 .tabs a { font-size: 15px; }
-=======
 .preview-badge { font-size: 12px; font-weight: 600; color: #1a1200; background: var(--warn); border-radius: 999px; padding: 2px 8px; vertical-align: 2px; }
->>>>>>> Stashed changes
