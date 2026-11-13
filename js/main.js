@@ -29,6 +29,12 @@ function render() {
 }
 
 for (const el of document.querySelectorAll('[data-version]')) el.textContent = `v${app.version}`;
+if (app.preview) {
+  const badge = document.createElement('span');
+  badge.className = 'preview-badge';
+  badge.textContent = `preview: ${app.preview}`;
+  document.querySelector('.top h1')?.append(' ', badge);
+}
 for (const el of document.querySelectorAll('[data-name]')) el.textContent = app.name;
 document.title = app.name;
 mountConsole($('screen-console'), app);

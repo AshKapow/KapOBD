@@ -23,6 +23,15 @@ const DEFAULT_SETTINGS = {
 export const DEMO_PROFILE = 'petrol';
 
 /** Developer mode (all simulators + error injection): add ?dev to the address. */
+/** Branch preview builds live under /preview/<branch>/ on the Pages site. */
+function detectPreview() {
+  try {
+    return /\/preview\/([^/]+)\//.exec(globalThis.location?.pathname ?? '')?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function detectDevMode() {
   try {
     return new URLSearchParams(globalThis.location?.search ?? '').has('dev');
@@ -68,6 +77,7 @@ export const app = {
   previousLog: null,
   bleAvailable: bleAvailable(),
   devMode: detectDevMode(),
+  preview: detectPreview(), // branch name when running a preview build
   demo: false, // connected to the public demo car (nothing is saved)
   diag: null, // last fault-code read (see diagnostics.js readAllCodes)
   dtcTable: {},
@@ -97,6 +107,7 @@ export const app = {
   /** Header lines for "Copy log", so a pasted log is self-describing. */
   logHeader() {
     const lines = [`# ${this.name} v${this.version} — log copied ${new Date().toString()}`];
+    if (this.preview) lines.push(`# Preview build of branch: ${this.preview}`);
     if (typeof navigator !== 'undefined') lines.push(`# Browser: ${navigator.userAgent}`);
     const t = this.transport;
     if (t?.info) {
