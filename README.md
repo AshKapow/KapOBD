@@ -101,6 +101,7 @@ On **Vehicle**:
 ### Tips
 
 - **Hybrids:** the engine is often off while the car is on, so RPM 0 or some missing engine values are normal.
+- **No signal?** After you've opened KapOBD once with a connection, it keeps a copy on your device and opens without a signal, which is handy in car parks and garages. This works in Chrome and Edge (including on Android). Some iPhone browsers don't allow it; **About** shows whether it's available in yours.
 - Keep the screen on while you use it. Phones can drop the Bluetooth connection when the browser goes into the background or the screen locks.
 - Unplug the adapter when you've finished. Some adapters stay powered and can slowly drain the car battery.
 - **No adapter yet?** Tap **Try a demo with a simulated car** on the Connect screen to look around first. The demo car starts parked; on the Live screen, tap **Start a demo drive** to see the values move. The demo values are made up and nothing is saved.

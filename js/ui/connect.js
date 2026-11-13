@@ -32,6 +32,7 @@ export function renderConnect(el, app) {
   replace(
     el,
     h('h2', {}, 'Connect'),
+    !app.online ? h('div', { class: 'msg ok' }, app.offline === 'ready' ? 'No internet connection: KapOBD is running from its saved copy. Everything works except fetching updates.' : 'No internet connection.') : null,
     app.devMode ? h('div', { class: 'msg warn' }, 'Developer mode: simulators and error injection are available. Remove ?dev from the address to leave it.') : null,
     !connected && app.devMode ? transportPicker(app, disabled) : null,
     !connected && usingBle ? bleOptions(app) : null,

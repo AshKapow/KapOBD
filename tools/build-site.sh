@@ -7,7 +7,7 @@
 set -euo pipefail
 
 out="${1:-_site}"
-app_files=(index.html manifest.webmanifest icons css js data)
+app_files=(index.html manifest.webmanifest sw.js icons css js data)
 
 rm -rf "$out"
 mkdir -p "$out"

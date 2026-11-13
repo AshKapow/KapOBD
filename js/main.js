@@ -57,5 +57,36 @@ window.addEventListener('hashchange', route);
 route();
 app.logger.info(`${app.name} v${app.version} started. ${app.bleAvailable ? 'Web Bluetooth available.' : 'No Web Bluetooth in this browser.'}`);
 
+// Offline support: a service worker keeps a saved copy so KapOBD opens
+// without a phone signal. Some in-app iPhone browsers don't allow service
+// workers; the app then simply works online as before.
+const OFFLINE_TEXT = {
+  checking: 'Checking whether KapOBD can be saved for offline use…',
+  ready: 'Ready: KapOBD is saved on this device and opens without a signal.',
+  unavailable: 'Not available in this browser. KapOBD still works whenever you have a signal.',
+};
+function showOffline() {
+  for (const el of document.querySelectorAll('[data-offline]')) el.textContent = OFFLINE_TEXT[app.offline] ?? '';
+}
+if (typeof navigator !== 'undefined' && navigator.serviceWorker && window.isSecureContext) {
+  navigator.serviceWorker
+    .register(`sw.js?v=${app.version}`)
+    .then(() => navigator.serviceWorker.ready)
+    .then(() => {
+      app.logger.info('Offline copy ready (service worker active)');
+      app.set({ offline: 'ready' });
+    })
+    .catch((err) => {
+      app.logger.warn(`Offline copy not available: ${err?.message ?? err}`);
+      app.set({ offline: 'unavailable' });
+    });
+} else {
+  app.offline = 'unavailable';
+}
+window.addEventListener('online', () => app.set({ online: true }));
+window.addEventListener('offline', () => app.set({ online: false }));
+app.on(showOffline);
+showOffline();
+
 // Debug handle for desktop testing.
 window.obdApp = app;
