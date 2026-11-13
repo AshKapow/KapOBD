@@ -3,7 +3,7 @@
 
 import { Logger } from './logger.js';
 import { Elm327, CommandRejected } from './elm327.js';
-import { BleTransport, bleAvailable } from './transport/ble.js';
+import { BleTransport, bleAvailable, describeError } from './transport/ble.js';
 import { MockTransport, MOCK_PROFILES } from './transport/mock.js';
 import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, setNickname } from './vehicle.js';
 import { load, save } from './storage.js';
@@ -21,6 +21,15 @@ const DEFAULT_SETTINGS = {
 
 // The simulated car behind the public "Try a demo" button.
 export const DEMO_PROFILE = 'petrol';
+
+/** Branch preview builds live under /preview/<branch>/ on the Pages site. */
+function detectPreview() {
+  try {
+    return /\/preview\/([^/]+)\//.exec(globalThis.location?.pathname ?? '')?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** Developer mode (all simulators + error injection): add ?dev to the address. */
 function detectDevMode() {
@@ -45,7 +54,13 @@ function friendlyError(err) {
   if (err.name === 'SecurityError') return 'The browser blocked Bluetooth. The page must be opened over HTTPS and Connect must be tapped directly.';
   if (err.name === 'NetworkError') return `Bluetooth connection failed: ${err.message}. Try again; if it keeps failing, unplug the adapter for 10 seconds.`;
   if (err instanceof CommandRejected) return `Blocked by the safety allow-list: ${err.message}`;
-  return err.message || String(err);
+  if (err.name === 'BluetoothRequestError') {
+    const d = err.detail ?? {};
+    const said = [d.name && d.name !== 'Error' ? d.name : null, d.message || d.raw].filter(Boolean).join(': ');
+    return `Bluetooth couldn’t open the device list${said ? ` (the browser said “${said}”)` : ''}. Check that Bluetooth is switched on and that the browser is allowed to use it (on iPhone/iPad: Settings → Bluefy → Bluetooth), then try again. If it keeps happening, copy the log from the Console screen.`;
+  }
+  const d = describeError(err);
+  return d.message || d.raw || 'Unknown error';
 }
 
 export const app = {
@@ -68,6 +83,7 @@ export const app = {
   previousLog: null,
   bleAvailable: bleAvailable(),
   devMode: detectDevMode(),
+  preview: detectPreview(), // branch name when running a preview build
   demo: false, // connected to the public demo car (nothing is saved)
   diag: null, // last fault-code read (see diagnostics.js readAllCodes)
   dtcTable: {},
@@ -97,6 +113,7 @@ export const app = {
   /** Header lines for "Copy log", so a pasted log is self-describing. */
   logHeader() {
     const lines = [`# ${this.name} v${this.version} — log copied ${new Date().toString()}`];
+    if (this.preview) lines.push(`# Preview build of branch: ${this.preview}`);
     if (typeof navigator !== 'undefined') lines.push(`# Browser: ${navigator.userAgent}`);
     const t = this.transport;
     if (t?.info) {
@@ -154,7 +171,8 @@ export const app = {
         await this.runInit();
       },
       (err) => {
-        this.logger.error(`Connect failed: ${err?.name ?? 'Error'}: ${err?.message ?? err}`);
+        const d = describeError(err);
+        this.logger.error(`Connect failed: ${d.name}: ${d.message || '(no message)'} [type=${typeof err} code=${d.code ?? '-'} raw=${d.raw}]`);
         this.set({ status: 'idle', busy: null, error: friendlyError(err) });
       },
     );

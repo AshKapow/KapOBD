@@ -1,11 +1,13 @@
-# Runs the tests on every pull request. On main, runs them again and
-# publishes the app to GitHub Pages only if they pass.
+# Runs the tests on every push and pull request, then publishes GitHub Pages:
+#   - main at https://<user>.github.io/<repo>/
+#   - every other branch at .../preview/<branch>/ (for testing before merging)
+# The site is rebuilt from scratch each time, so deleted branches disappear.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+  delete:
   workflow_dispatch:
 
 permissions:
@@ -27,7 +29,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -37,15 +39,27 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     concurrency:
+      # Every run rebuilds the whole site, so only the newest one matters.
       group: pages
-      cancel-in-progress: false
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
-      - name: Collect the app files
+        with:
+          ref: main
+          fetch-depth: 0 # all branches, for the previews
+      - name: Build the site (main + branch previews)
+        # Use the build script from the commit that triggered this run (like
+        # the workflow itself), so a branch can change it before it's on main.
         run: |
-          mkdir _site
-          cp -r index.html css js data _site/
+          git show "$GITHUB_SHA:tools/build-site.sh" > "$RUNNER_TEMP/build-site.sh"
+          bash "$RUNNER_TEMP/build-site.sh" _site
       - uses: actions/configure-pages@v6
+      # One artifact name per attempt, so "Re-run failed jobs" doesn't find
+      # the previous attempt's upload too and refuse to deploy.
       - uses: actions/upload-pages-artifact@v5
+        with:
+          name: github-pages-${{ github.run_attempt }}
       - id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}

@@ -13,12 +13,46 @@ import { load } from '../storage.js';
 
 // Every service UUID seen on ELM327-style BLE adapters. Only services listed
 // here are accessible after connecting, so the list is deliberately broad.
+// Always full 128-bit lowercase strings: Bluefy (iOS) can reject a request
+// that mixes 16-bit numbers with UUID strings, with a bare non-Error value.
 export const SERVICE_CANDIDATES = [
-  0xfff0, // FFF1 notify / FFF2 write: most common on clones
-  0xffe0, // FFE1 notify+write (HM-10 style)
-  0x18f0, // 2AF0 notify / 2AF1 write (Vgate and others)
+  '0000fff0-0000-1000-8000-00805f9b34fb', // FFF1 notify / FFF2 write: most common on clones
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // FFE1 notify+write (HM-10 style)
+  '000018f0-0000-1000-8000-00805f9b34fb', // 2AF0 notify / 2AF1 write (Vgate and others)
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // some iOS-oriented adapters
 ];
+
+// requestDevice failures that are real answers, not browser quirks:
+// the user cancelled / nothing matched, or Bluetooth isn't allowed.
+const STANDARD_ERRORS = ['NotFoundError', 'SecurityError', 'NotAllowedError', 'NotSupportedError', 'AbortError'];
+
+/**
+ * Describe anything that was thrown or rejected. Bluefy sometimes rejects
+ * with a bare number, string or plain object rather than an Error.
+ */
+export function describeError(err) {
+  if (err == null) return { name: 'Error', message: '', raw: String(err), standard: false };
+  if (typeof err !== 'object') return { name: 'Error', message: String(err), raw: `${typeof err} ${JSON.stringify(err)}`, standard: false };
+  const name = err.name || err.constructor?.name || 'Error';
+  const message = err.message == null ? '' : String(err.message);
+  let raw;
+  try {
+    raw = JSON.stringify(err, Object.getOwnPropertyNames(err).filter((k) => k !== 'stack'));
+  } catch {
+    raw = String(err);
+  }
+  return { name, message, code: err.code, raw, standard: err instanceof Error && STANDARD_ERRORS.includes(name) };
+}
+
+export class BluetoothRequestError extends Error {
+  constructor(attempts) {
+    const last = attempts[attempts.length - 1]?.error;
+    super(last?.message || last?.raw || 'requestDevice failed');
+    this.name = 'BluetoothRequestError';
+    this.attempts = attempts;
+    this.detail = last;
+  }
+}
 
 const NAME_PREFIXES = ['OBD', 'VEEPEAK', 'Veepeak', 'OBDCheck', 'OBDII', 'ELM', 'V-LINK', 'IOS-Vlink', 'Vgate', 'vLink'];
 const CHUNK = 20;
@@ -111,20 +145,38 @@ export class BleTransport {
     if (!bleAvailable()) {
       throw new Error('Web Bluetooth is not available in this browser. On iPhone/iPad, open this page in the Bluefy browser.');
     }
-    const optionalServices = SERVICE_CANDIDATES;
-    const options = showAll
-      ? { acceptAllDevices: true, optionalServices }
-      : {
-          filters: [
-            ...SERVICE_CANDIDATES.map((s) => ({ services: [s] })),
-            ...NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
-          ],
-          optionalServices,
-        };
-    // No await before this line: keeps the user-gesture requirement satisfied.
-    const pick = navigator.bluetooth.requestDevice(options);
-    this.log.ble(`requestDevice (${showAll ? 'all devices' : 'filtered by OBD services/names'})`);
-    this.device = await pick;
+    const optionalServices = [...SERVICE_CANDIDATES];
+    const attempts = [
+      showAll
+        ? { label: 'all devices', options: { acceptAllDevices: true, optionalServices } }
+        : {
+            label: 'filtered by OBD services/names',
+            options: {
+              filters: [...SERVICE_CANDIDATES.map((s) => ({ services: [s] })), ...NAME_PREFIXES.map((namePrefix) => ({ namePrefix }))],
+              optionalServices,
+            },
+          },
+      // Fallbacks, only after a non-standard rejection (a browser quirk, not a cancel):
+      ...(showAll ? [] : [{ label: 'all devices (fallback)', options: { acceptAllDevices: true, optionalServices } }]),
+      { label: 'all devices, two services (fallback)', options: { acceptAllDevices: true, optionalServices: SERVICE_CANDIDATES.slice(0, 2) } },
+    ];
+    const failures = [];
+    for (const attempt of attempts) {
+      // The first call happens before any await, inside the user's tap.
+      const pick = navigator.bluetooth.requestDevice(attempt.options);
+      this.log.ble(`requestDevice (${attempt.label})`);
+      try {
+        this.device = await pick;
+        break;
+      } catch (err) {
+        const d = describeError(err);
+        this.log.warn(`requestDevice (${attempt.label}) rejected: type=${typeof err} name=${d.name} message="${d.message}" code=${d.code ?? '-'} raw=${d.raw}`);
+        failures.push({ label: attempt.label, error: d });
+        // A cancel, "nothing found" or a permission problem is a real answer: stop.
+        if (d.standard) throw err;
+      }
+    }
+    if (!this.device) throw new BluetoothRequestError(failures);
     this.log.ble(`Picked device name="${this.device.name ?? ''}" id=${this.device.id}`);
     this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnect);
     this.device.addEventListener('gattserverdisconnected', this._onGattDisconnect);

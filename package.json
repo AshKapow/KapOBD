@@ -1,6 +1,6 @@
 {
   "name": "kapobd",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "KapOBD: OBD-II dashboard and fault-code reader over Web Bluetooth (ELM327 BLE adapters). No build step.",
   "type": "module",
