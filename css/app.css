@@ -316,3 +316,13 @@ body.driving main { padding-top: 12px; }
   .drive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .drive-tile { min-height: 50vh; }
 }
+
+/* --- Brand --- */
+.top h1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brand-mark { width: 30px; height: 30px; border-radius: 8px; flex: none; box-shadow: 0 0 0 1px var(--line); }
+.about-brand { display: flex; align-items: center; gap: 16px; margin: 4px 0 12px; }
+.about-brand img { width: 96px; height: 96px; border-radius: 22px; flex: none; }
+.about-brand div { display: flex; flex-direction: column; gap: 2px; }
+.about-brand strong { font-size: 22px; }
+.about-brand span { color: var(--muted); }
+.about-brand small { color: var(--muted); }
