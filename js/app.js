@@ -9,6 +9,8 @@ import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, se
 import { load, save } from './storage.js';
 import { readAllCodes, checkClearConditions, clearAndVerify } from './diagnostics.js';
 import { loadDtcTable } from './obd/dtc.js';
+import { LivePoller, defaultTiles, isLivePid } from './poller.js';
+import { DEFAULT_UNITS } from './obd/pids.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const DEFAULT_SETTINGS = {
@@ -17,7 +19,11 @@ const DEFAULT_SETTINGS = {
   autoDiscover: true,
   includeFrags: true,
   sim: { noDataRate: 0, dropRate: 0, tinyFragments: false, parked: false },
+  units: { ...DEFAULT_UNITS }, // speed mph|kmh, temp C|F, distance mi|km
+  tiles: {}, // per vehicle profile key: the live tiles chosen, in order
 };
+
+export const MAX_TILES = 8;
 
 // The simulated car behind the public "Try a demo" button.
 export const DEMO_PROFILE = 'petrol';
@@ -42,7 +48,13 @@ function detectDevMode() {
 
 function loadSettings() {
   const s = load('settings', {});
-  const merged = { ...DEFAULT_SETTINGS, ...s, sim: { ...DEFAULT_SETTINGS.sim, ...(s?.sim ?? {}) } };
+  const merged = {
+    ...DEFAULT_SETTINGS,
+    ...s,
+    sim: { ...DEFAULT_SETTINGS.sim, ...(s?.sim ?? {}) },
+    units: { ...DEFAULT_SETTINGS.units, ...(s?.units ?? {}) },
+    tiles: { ...(s?.tiles ?? {}) },
+  };
   // A simulator saved by an older version may no longer exist.
   if (merged.transport !== 'ble' && !MOCK_PROFILES[String(merged.transport).replace(/^sim-/, '')]) merged.transport = 'ble';
   return merged;
@@ -88,7 +100,14 @@ export const app = {
   diag: null, // last fault-code read (see diagnostics.js readAllCodes)
   dtcTable: {},
   clearFlow: null, // { step: 'warn' | 'conditions' | 'confirm' | 'result', ... }
+  live: null, // LivePoller while the Live screen is polling
+  liveDetail: null, // PID shown full-screen on the Live screen
+  liveSeconds: 60, // graph window on the detail view
+  editingTiles: false,
+  driving: false, // driving view: big numbers, no menus
   _listeners: new Set(),
+  _liveListeners: new Set(),
+  _liveTimer: null,
 
   on(fn) {
     this._listeners.add(fn);
@@ -101,7 +120,12 @@ export const app = {
   },
 
   updateSettings(patch) {
-    const settings = { ...this.settings, ...patch, sim: { ...this.settings.sim, ...(patch.sim ?? {}) } };
+    const settings = {
+      ...this.settings,
+      ...patch,
+      sim: { ...this.settings.sim, ...(patch.sim ?? {}) },
+      units: { ...this.settings.units, ...(patch.units ?? {}) },
+    };
     save('settings', settings);
     this.set({ settings });
   },
@@ -181,6 +205,8 @@ export const app = {
   _attach(t) {
     t.ondisconnect = () => {
       this.logger.warn('Adapter disconnected');
+      this.live?.stop('disconnected');
+      this.live = null;
       this.set({ status: 'disconnected', busy: null, error: 'The adapter disconnected. Tap Reconnect, or Connect to pick it again.' });
     };
     this.transport = t;
@@ -204,6 +230,7 @@ export const app = {
   async disconnect() {
     const t = this.transport;
     if (!t) return;
+    await this.stopLive();
     t.ondisconnect = null;
     await t.disconnect();
     this.set({ status: 'idle', busy: null, elm: null, demo: false, notice: 'Disconnected.' });
@@ -211,6 +238,8 @@ export const app = {
 
   async _action(label, fn) {
     if (this.busy || !this.elm) return;
+    // One conversation with the adapter at a time: live polling pauses for actions.
+    if (this.live) await this.stopLive();
     this.set({ busy: label, error: null, notice: null, progress: '' });
     try {
       await fn();
@@ -271,6 +300,91 @@ export const app = {
       this.set({ error: friendlyError(err) });
       return null;
     }
+  },
+
+  // --- live data ----------------------------------------------------------------
+
+  /** Live-screen subscribers get value updates (throttled), not full re-renders. */
+  onLive(fn) {
+    this._liveListeners.add(fn);
+    return () => this._liveListeners.delete(fn);
+  },
+
+  _liveChanged() {
+    if (this._liveTimer) return;
+    this._liveTimer = setTimeout(() => {
+      this._liveTimer = null;
+      for (const fn of this._liveListeners) fn(this);
+    }, 250);
+  },
+
+  /** The tiles for the current vehicle: saved choice, else the defaults. */
+  tiles() {
+    const p = this.profile;
+    if (!p) return [];
+    const saved = this.settings.tiles?.[p.key];
+    const list = Array.isArray(saved) ? saved : defaultTiles(p.supported01);
+    return list.filter((pid) => p.supported01.includes(pid) && isLivePid(pid)).slice(0, MAX_TILES);
+  },
+
+  setTiles(list) {
+    const p = this.profile;
+    if (!p) return;
+    const tiles = list.filter((pid) => p.supported01.includes(pid) && isLivePid(pid)).slice(0, MAX_TILES);
+    this.updateSettings({ tiles: { ...this.settings.tiles, [p.key]: tiles } });
+    this.live?.setPids(tiles);
+  },
+
+  resetTiles() {
+    const p = this.profile;
+    if (!p) return;
+    const tiles = { ...this.settings.tiles };
+    delete tiles[p.key];
+    this.updateSettings({ tiles });
+    this.live?.setPids(this.tiles());
+  },
+
+  get canGoLive() {
+    return this.status === 'ready' && !!this.profile && !this.busy && !!this.elm;
+  },
+
+  startLive() {
+    if (this.live || !this.canGoLive) return;
+    const poller = new LivePoller(this.elm, {
+      pids: this.tiles(),
+      ecus: this.profile.ecus,
+      onUpdate: () => this._liveChanged(),
+      onStop: (reason) => {
+        if (this.live === poller) this.set({ live: null, notice: reason === 'disconnected' ? null : this.notice });
+      },
+    });
+    this.live = poller;
+    poller.start();
+    this.set({});
+  },
+
+  async stopLive() {
+    const p = this.live;
+    if (!p) return;
+    this.live = null;
+    await p.stop();
+    this.set({ driving: false });
+  },
+
+  setDriving(on) {
+    this.set({ driving: !!on, liveDetail: null, editingTiles: false });
+  },
+
+  /** Simulators only: park the car (codes can be cleared) or drive it (live data moves). */
+  get simParked() {
+    return this.transport?.kind === 'mock' ? !!this.transport.sim?.opts.parked : null;
+  },
+
+  setSimParked(parked) {
+    if (this.transport?.kind !== 'mock' || !this.transport.sim) return;
+    this.transport.sim.opts.parked = !!parked;
+    this.logger.info(`Simulator: car ${parked ? 'parked (ignition on, engine off)' : 'driving'}`);
+    this.set({});
   },
 
   // --- fault codes ------------------------------------------------------------

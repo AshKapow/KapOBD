@@ -54,28 +54,57 @@ const CAN29 = { dpn: '7', kind: 'can29', name: 'ISO 15765-4 (CAN 29/500)' };
 const K_LINE = { dpn: '3', kind: 'legacy', name: 'ISO 9141-2' };
 
 export const MOCK_PROFILES = {
+  // Modelled on a real field log from a full hybrid with a security gateway:
+  // 29-bit CAN, five computers all answering the common PIDs, the engine
+  // computer at 18DAF115 supporting ~50 PIDs, PID 9A on the hybrid computer,
+  // fuel type reported as plain petrol, no fuel level (2F) or odometer (A6).
   hybrid: {
     label: 'Simulator: hybrid with security gateway',
-    description: 'Two ECUs, engine often off, refuses clearing codes',
-    protocol: CAN11,
+    description: 'Five computers, engine often off, refuses clearing codes',
+    protocol: CAN29,
     vin: 'SIMHYBRID00000001',
     hybrid: true,
-    fuelType: 0x11, // hybrid petrol
+    fuelType: 0x01, // the real car reports petrol, not a hybrid fuel type
     clear: 'refuse', // security gateway
     ecus: {
-      '7E8': {
+      '18DAF115': {
         name: 'engine',
-        pids01: [0x01, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x0D, 0x0F, 0x11, 0x1C, 0x1F, 0x21, 0x2F, 0x31, 0x33, 0x42, 0x46, 0x4D, 0x4E, 0x51, 0x5C, 0xA6],
+        pids01: [0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x13, 0x15, 0x1C, 0x1F, 0x21, 0x24, 0x2C, 0x2D, 0x2E, 0x30, 0x31, 0x33, 0x3C, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x4A, 0x4C, 0x51, 0x5B, 0x5C, 0x5E, 0x62, 0x63, 0x67, 0x68, 0x78, 0x7A, 0x7C, 0x8B, 0x8E, 0x9D, 0x9E],
         pids09: [0x02],
         dtcs: true,
         delay: (s) => (s.engineOn ? 60 : 350), // engine computer is slow while the engine is stopped
       },
-      '7EA': {
+      '18DAF1DA': {
         name: 'hybrid',
-        pids01: [0x01, 0x0D, 0x42, 0x46, 0x5B],
+        pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x1F, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x43, 0x46, 0x49, 0x4A, 0x5B, 0x9A],
         pids09: [],
         dtcs: false,
-        delay: () => 40,
+        permanent: false,
+        delay: () => 30,
+      },
+      '18DAF1DB': {
+        name: 'other',
+        pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x46, 0x5B],
+        pids09: [],
+        dtcs: false,
+        permanent: false,
+        delay: () => 30,
+      },
+      '18DAF1E3': {
+        name: 'other',
+        pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x43, 0x46, 0x5B],
+        pids09: [],
+        dtcs: false,
+        permanent: false,
+        delay: () => 30,
+      },
+      '18DAF1DF': {
+        name: 'other',
+        pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x43, 0x46, 0x5B],
+        pids09: [],
+        dtcs: false,
+        permanent: false,
+        delay: () => 30,
       },
     },
     faults: { stored: ['P0420'], pending: ['P0171'], permanent: ['P0420'] },
@@ -223,6 +252,9 @@ export class SimElm {
       railKpa: 30000 + load * 900,
       fuelRate: engineOn ? 0.8 + load * 0.08 : 0,
       odometerKm: 48213.4 + t * (speed / 3600),
+      // Hybrid pack: positive current = discharging (electric drive), negative = charging.
+      hvVolts: 232 + Math.sin(t / 9) * 6,
+      hvAmps: parked ? 1.5 : engineOn ? -12 + Math.sin(t) * 4 : speed > 1 ? 18 + speed * 0.9 : 2,
     };
   }
 
@@ -232,7 +264,8 @@ export class SimElm {
         const own = ecu.dtcs;
         const count = own ? this.faults.stored.length : 0;
         const a = (own && this.mil ? 0x80 : 0) | count;
-        if (!own) return [0x00, this.profile.diesel ? 0x08 : 0x00, 0x00, 0x00];
+        // Other computers: only the continuous "components" monitor, complete.
+        if (!own) return [0x00, this.profile.diesel ? 0x0c : 0x04, 0x00, 0x00];
         // B: misfire/fuel/components supported (+ bit 3 for diesel); C: supported; D: incomplete
         return this.profile.diesel ? [a, 0x0f, 0xeb, this.monitorsIncomplete] : [a, 0x07, 0x65, this.monitorsIncomplete];
       }
@@ -275,6 +308,18 @@ export class SimElm {
       case 0x62: return [clampByte(125 + s.load * 0.95)];
       case 0x63: return u16(300);
       case 0xA6: return u32(s.odometerKm * 10);
+      case 0x24: return [...u16((1.0 + Math.sin(s.t) * 0.02) * 32768), ...u16(0.5 * 8192)];
+      case 0x2D: return [128];
+      case 0x2E: return pct(s.engineOn ? 12 : 0);
+      case 0x41: return [0x00, 0x07, 0x65, 0x65];
+      case 0x67: return [0x01, clampByte(s.coolant + 40), 0x00];
+      case 0x68: return [0x01, clampByte(s.iat + 40), 0, 0, 0, 0, 0];
+      case 0x78: case 0x7C: return [0x01, ...u16(((s.engineOn ? 480 : 160) + 40) * 10), 0, 0, 0, 0, 0, 0];
+      case 0x8E: return [clampByte(125 + 6)];
+      case 0x9A: {
+        const amps = Math.round(s.hvAmps * 10);
+        return [0x07, 0x00, ...u16(s.hvVolts * 64), (amps >> 8) & 0xff, amps & 0xff, 0x00];
+      }
       default: return null;
     }
   }
@@ -313,7 +358,7 @@ export class SimElm {
       return data ? [[0x42, pid, 0x00, ...data]] : null;
     }
     if (mode === 0x03 || mode === 0x07 || mode === 0x0A) {
-      if (mode === 0x0A && this.profile.noPermanent) return null;
+      if (mode === 0x0A && (this.profile.noPermanent || ecu.permanent === false)) return null;
       const list = ecu.dtcs ? this.faults[{ 3: 'stored', 7: 'pending', 10: 'permanent' }[mode]] : [];
       const bytes = list.flatMap(encodeDtc);
       if (!legacy) return [[0x40 + mode, list.length, ...bytes]];

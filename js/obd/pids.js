@@ -7,6 +7,25 @@ const u16 = (d) => d[0] * 256 + d[1];
 const pct = (d) => (d[0] * 100) / 255;
 const temp = (d) => d[0] - 40;
 const trim = (d) => ((d[0] - 128) * 100) / 128;
+const s16 = (hi, lo) => {
+  const n = hi * 256 + lo;
+  return n >= 0x8000 ? n - 0x10000 : n;
+};
+// Multi-sensor temperature PIDs: A = which sensors are present, B-C = sensor 1.
+const sensorTemp = (d) => (d[1] * 256 + d[2]) / 10 - 40;
+
+/**
+ * PID 9A, hybrid/EV battery. UNVERIFIED layout (from a manufacturer listing,
+ * not the SAE text): A = support bits (bit 1 voltage, bit 2 current),
+ * C-D = pack voltage / 64, E-F = signed current / 10 (positive = discharging).
+ * Raw bytes are logged so a field log can confirm it.
+ */
+export function decodeHybridBattery(d) {
+  const a = d[0];
+  const voltage = a & 0x02 && d.length >= 4 ? (d[2] * 256 + d[3]) / 64 : null;
+  const current = a & 0x04 && d.length >= 6 ? s16(d[4], d[5]) / 10 : null;
+  return { voltage, current, powerKw: voltage != null && current != null ? (voltage * current) / 1000 : null };
+}
 
 export const FUEL_TYPES = {
   0x00: 'Not available', 0x01: 'Petrol', 0x02: 'Methanol', 0x03: 'Ethanol', 0x04: 'Diesel',
@@ -115,6 +134,12 @@ export const PIDS = {
   0x63: { name: 'Engine reference torque', unit: 'Nm', bytes: 2, decode: u16, poll: 'once', group: 'info' },
   // Byte A says which of two sensors is present; report sensor 1, else 2.
   0x67: { name: 'Coolant temp (sensor 1/2)', unit: '°C', kind: 'temp', bytes: 3, decode: (d) => (d[0] & 1 ? d[1] : d[2]) - 40, poll: 'slow', group: 'advanced' },
+  0x24: { name: 'Wideband O2 sensor 1 (λ)', unit: '', digits: 2, bytes: 4, decode: (d) => ((d[0] * 256 + d[1]) * 2) / 65536, poll: 'slow', group: 'advanced' },
+  0x68: { name: 'Intake air temp (sensor 1)', unit: '°C', kind: 'temp', bytes: 2, decode: (d) => d[1] - 40, poll: 'slow', group: 'advanced' },
+  0x78: { name: 'Exhaust gas temp (bank 1)', unit: '°C', kind: 'temp', digits: 0, bytes: 3, decode: sensorTemp, poll: 'slow', group: 'advanced' },
+  0x7c: { name: 'Particulate filter temp', unit: '°C', kind: 'temp', digits: 0, bytes: 3, decode: sensorTemp, poll: 'slow', group: 'advanced' },
+  0x8e: { name: 'Engine friction torque', unit: '%', bytes: 1, decode: (d) => d[0] - 125, poll: 'slow', group: 'advanced' },
+  0x9a: { name: 'Hybrid battery voltage', unit: 'V', digits: 0, bytes: 4, decode: (d) => decodeHybridBattery(d).voltage, detail: decodeHybridBattery, unverified: true, poll: 'slow', group: 'main' },
   0xa6: { name: 'Odometer', unit: 'km', kind: 'distance', digits: 0, bytes: 4, decode: (d) => (d[0] * 2 ** 24 + d[1] * 2 ** 16 + d[2] * 2 ** 8 + d[3]) / 10, poll: 'once', group: 'info' },
 };
 

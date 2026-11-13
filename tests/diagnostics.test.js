@@ -39,11 +39,12 @@ test('hybrid with gateway: codes, freeze frame, clear refused and nothing retrie
   assert.deepEqual(diag.stored.codes, ['P0420']);
   assert.deepEqual(diag.pending.codes, ['P0171']);
   assert.deepEqual(diag.permanent.codes, ['P0420']);
-  assert.equal(diag.stored.ecus.find((e) => e.ecu === '7E8').codes[0], 'P0420');
+  assert.equal(diag.stored.ecus.find((e) => e.ecu === '18DAF115').codes[0], 'P0420');
+  assert.deepEqual(diag.permanent.ecus.map((e) => e.ecu), ['18DAF115'], 'only the engine computer answers mode 0A');
   assert.equal(readinessSummary(diag.monitor).mil, true);
 
   assert.equal(diag.freeze.code, 'P0420');
-  assert.equal(diag.freeze.ecu, '7E8');
+  assert.equal(diag.freeze.ecu, '18DAF115');
   const ff = Object.fromEntries(diag.freeze.values.map((v) => [v.pid, v.value]));
   assert.equal(ff[0x0c], 2140);
   assert.equal(ff[0x0d], 63);

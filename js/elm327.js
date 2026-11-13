@@ -300,7 +300,7 @@ export class Elm327 {
   }
 
   _onData(s) {
-    this.log.frag(s);
+    if (!this._quiet) this.log.frag(s);
     this.buffer += s;
     let i;
     while ((i = this.buffer.indexOf('>')) >= 0) {
@@ -328,6 +328,8 @@ export class Elm327 {
   /**
    * Queue a command. Resolves with the parsed response; never retries.
    * Rejects with CommandRejected if the allow-list refuses it.
+   * opts.quiet: don't log the routine traffic (live-data polling); timeouts,
+   * write failures and errors other than NO DATA are still logged.
    */
   send(cmd, opts = {}) {
     const check = checkCommand(cmd, opts);
@@ -358,12 +360,14 @@ export class Elm327 {
       this._lateWake = null;
     }
     this.buffer = '';
+    const quiet = !!opts.quiet;
+    this._quiet = quiet;
 
     const isObd = check.kind === 'obd';
     const timeout = opts.timeoutMs ?? (isObd && !this.searched ? this.searchTimeoutMs : this.timeoutMs);
     const started = Date.now();
     this.stats.sent++;
-    this.log.tx(c);
+    if (!quiet) this.log.tx(c);
 
     const raw = await new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -393,14 +397,14 @@ export class Elm327 {
       return { cmd: c, ok: false, error: 'WRITE_FAILED', lines: [], notices: [], messages: [], negatives: [], raw: null, ms };
     }
 
-    this.log.rx(raw, ms);
+    if (!quiet) this.log.rx(raw, ms);
     const res = parseResponse(raw, { cmd: c, headers: this.headers, protocol: this.protocol });
     res.ms = ms;
     this._track(c, res, isObd);
     if (!res.ok) {
       this.stats.errors++;
       const neg = res.negatives.map((n) => `${n.ecu}: 7F ${bytesToHex([n.service])} ${bytesToHex([n.nrc])} (${n.nrcName})`).join('; ');
-      this.log.warn(`"${c}" → ${res.error}${neg ? ` [${neg}]` : ''}`);
+      if (!quiet || res.error !== 'NO DATA') this.log.warn(`"${c}" → ${res.error}${neg ? ` [${neg}]` : ''}`);
     }
     return res;
   }

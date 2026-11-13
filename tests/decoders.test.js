@@ -132,3 +132,19 @@ test('newer PIDs: odometer, fuel rate, O2 voltage, torque', () => {
   assert.equal(decodePid(0x62, [0x96]).value, 25);
   assert.equal(formatValue(0xa6, 1000), '621 mi');
 });
+
+test('PID 9A hybrid battery (unverified layout) and the other new PIDs', async () => {
+  const { decodeHybridBattery } = await import('../js/obd/pids.js');
+  // 0x07 = voltage + current supported; 232 V; -12.5 A (charging)
+  const v = 232 * 64;
+  const a = -125 & 0xffff;
+  const hv = decodeHybridBattery([0x07, 0x00, v >> 8, v & 0xff, a >> 8, a & 0xff, 0x00]);
+  assert.equal(hv.voltage, 232);
+  assert.equal(hv.current, -12.5);
+  close(hv.powerKw, -2.9);
+  assert.equal(decodeHybridBattery([0x00, 0, 0, 0, 0, 0]).voltage, null, 'support bit off');
+  assert.equal(decodePid(0x9a, [0x07, 0x00, v >> 8, v & 0xff, 0, 0]).value, 232);
+  assert.equal(decodePid(0x78, [0x01, 0x14, 0x50]).value, 480); // (0x1450 / 10) - 40
+  close(decodePid(0x24, [0x80, 0x00, 0x10, 0x00]).value, 1.0);
+  assert.equal(decodePid(0x8e, [131]).value, 6);
+});
