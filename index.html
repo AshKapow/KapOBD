@@ -6,11 +6,15 @@
     <meta name="theme-color" content="#0f1216" />
     <meta name="color-scheme" content="dark" />
     <title>KapOBD</title>
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="css/app.css" />
   </head>
   <body>
     <header class="top">
-      <h1><span data-name>KapOBD</span> <small data-version></small></h1>
+      <h1><img class="brand-mark" src="icons/icon.svg" alt="" width="30" height="30" /> <span data-name>KapOBD</span> <small data-version></small></h1>
       <span id="status" class="pill" data-state="idle">Not connected</span>
     </header>
 
@@ -22,6 +26,7 @@
       <section id="screen-console" class="screen" hidden></section>
       <section id="screen-about" class="screen" hidden>
         <h2>About</h2>
+        <div class="about-brand"><img src="icons/icon.svg" alt="KapOBD icon" width="96" height="96" /><div><strong data-name>KapOBD</strong><span>Live data and fault codes for your car, in the browser.</span><small data-version></small></div></div>
         <div class="card">
           <p><strong>Disclaimer.</strong> The app reads standard diagnostic data and is not a substitute for professional diagnosis. Clearing codes does not repair faults. Do not interact with the app while driving.</p>
         </div>
