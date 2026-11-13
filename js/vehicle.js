@@ -18,7 +18,16 @@ export const ECU_NAMES = {
 // Source addresses used by 29-bit CAN and K-line/J1850 cars.
 const SOURCE_NAMES = { '10': 'usually engine', '11': 'often engine #2', '18': 'often transmission', '1A': 'often transmission' };
 
+// Names the computers reported themselves (mode 09 PID 0A), when known.
+let reportedNames = {};
+
+/** Use the names a vehicle's computers reported (e.g. { '18DAF115': 'Engine Control' }). */
+export function setEcuNames(names) {
+  reportedNames = { ...(names ?? {}) };
+}
+
 export function ecuLabel(id) {
+  if (reportedNames[id]) return `${id} · ${reportedNames[id]}`;
   if (ECU_NAMES[id]) return `${id} · ${ECU_NAMES[id]}`;
   const src = /^18DAF1([0-9A-F]{2})$/.exec(id)?.[1] ?? (/^[0-9A-F]{2}$/.test(id) ? id : null);
   if (src) return `${id} · ECU ${src}${SOURCE_NAMES[src] ? ` (${SOURCE_NAMES[src]})` : ''}`;

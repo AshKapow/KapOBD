@@ -16,6 +16,11 @@ const u32 = (v) => {
   return [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
 };
 const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, '0');
+const asciiPad = (text, len) => [...text.slice(0, len)].map((c) => c.charCodeAt(0)).concat(Array(Math.max(0, len - text.length)).fill(0));
+// In-use performance counters (09 08 spark / 09 0B diesel): OBD cycles,
+// ignitions, then completed/conditions pairs per monitor.
+const IPT_SPARK = [112, 340, 18, 110, 0, 0, 25, 110, 0, 0, 30, 105, 0, 0, 6, 40, 22, 108, 0, 0];
+const IPT_DIESEL = [96, 280, 20, 90, 15, 90, 0, 0, 4, 90, 18, 90, 22, 92, 25, 92, 30, 95];
 
 /** Small deterministic PRNG (mulberry32) for repeatable simulations. */
 function seededRandom(seed) {
@@ -70,44 +75,57 @@ export const MOCK_PROFILES = {
       '18DAF115': {
         name: 'engine',
         pids01: [0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x13, 0x15, 0x1C, 0x1F, 0x21, 0x24, 0x2C, 0x2D, 0x2E, 0x30, 0x31, 0x33, 0x3C, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x4A, 0x4C, 0x51, 0x5B, 0x5C, 0x5E, 0x62, 0x63, 0x67, 0x68, 0x78, 0x7A, 0x7C, 0x8B, 0x8E, 0x9D, 0x9E],
-        pids09: [0x02],
+        pids09: [0x02, 0x04, 0x06, 0x08, 0x0A],
+        info: { name: 'ECM-EngineControl', calid: 'SIMCAL-ENG-0001', cvn: [0x1a, 0x2b, 0x3c, 0x4d], ipt: IPT_SPARK },
         dtcs: true,
         delay: (s) => (s.engineOn ? 60 : 350), // engine computer is slow while the engine is stopped
       },
       '18DAF1DA': {
         name: 'hybrid',
+        info: { name: 'HCM-HybridControl', calid: 'SIMCAL-HYB-0002', cvn: [0x5e, 0x6f, 0x70, 0x81] },
         pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x1F, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x43, 0x46, 0x49, 0x4A, 0x5B, 0x9A],
-        pids09: [],
+        pids09: [0x04, 0x06, 0x0A],
         dtcs: false,
         permanent: false,
         delay: () => 30,
       },
       '18DAF1DB': {
         name: 'other',
+        info: { name: 'BECM-BatteryEnergy', calid: 'SIMCAL-BAT-0003', cvn: [0x92, 0xa3, 0xb4, 0xc5] },
         pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x46, 0x5B],
-        pids09: [],
+        pids09: [0x04, 0x06, 0x0A],
         dtcs: false,
         permanent: false,
         delay: () => 30,
       },
       '18DAF1E3': {
         name: 'other',
+        info: { name: 'TCM-TransmissionCtl', calid: 'SIMCAL-TRN-0004', cvn: [0xd6, 0xe7, 0xf8, 0x09] },
         pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x43, 0x46, 0x5B],
-        pids09: [],
+        pids09: [0x04, 0x06, 0x0A],
         dtcs: false,
         permanent: false,
         delay: () => 30,
       },
       '18DAF1DF': {
         name: 'other',
+        info: { name: 'EPS-PowerSteering', calid: 'SIMCAL-EPS-0005', cvn: [0x13, 0x24, 0x35, 0x46] },
         pids01: [0x01, 0x04, 0x05, 0x0C, 0x0D, 0x1C, 0x21, 0x30, 0x31, 0x33, 0x41, 0x42, 0x43, 0x46, 0x5B],
-        pids09: [],
+        pids09: [0x04, 0x06, 0x0A],
         dtcs: false,
         permanent: false,
         delay: () => 30,
       },
     },
     faults: { stored: ['P0420'], pending: ['P0171'], permanent: ['P0420'] },
+    // Mode 06: catalyst result over its limit, matching the stored P0420.
+    tests06: [
+      [0x01, 0x81, 0x0a, 3690, 3279, 4918],
+      [0x21, 0x80, 0x01, 260, 0, 200],
+      [0x41, 0x81, 0x14, 9, 2, 15],
+      [0xa1, 0x0b, 0x24, 0, 0, 30],
+      [0xa1, 0x0c, 0x24, 0, 0, 65535],
+    ],
   },
   petrol: {
     label: 'Simulator: petrol car',
@@ -121,12 +139,25 @@ export const MOCK_PROFILES = {
       '7E8': {
         name: 'engine',
         pids01: [0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x13, 0x1C, 0x1F, 0x21, 0x2F, 0x30, 0x31, 0x33, 0x3C, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4A, 0x4C, 0x4D, 0x4E, 0x51],
-        pids09: [0x02],
+        pids09: [0x02, 0x04, 0x06, 0x08, 0x0A],
+        info: { name: 'ECM-EngineControl', calid: 'SIMCAL-PET-0100', cvn: [0xca, 0xfe, 0x12, 0x34], ipt: IPT_SPARK },
         dtcs: true,
         delay: () => 45,
       },
     },
     faults: { stored: ['P0301', 'P0128'], pending: [], permanent: ['P0301'] },
+    // Mode 06: cylinder 1 misfire count over its limit, matching P0301.
+    tests06: [
+      [0x01, 0x81, 0x0a, 3690, 3279, 4918],
+      [0x02, 0x81, 0x0a, 3772, 3279, 4918],
+      [0x21, 0x80, 0x01, 120, 0, 200],
+      [0x39, 0x80, 0x1a, 0, 0, 0],
+      [0xa2, 0x0b, 0x24, 38, 0, 30],
+      [0xa2, 0x0c, 0x24, 12, 0, 65535],
+      [0xa3, 0x0b, 0x24, 0, 0, 30],
+      [0xa4, 0x0b, 0x24, 1, 0, 30],
+      [0xa5, 0x0b, 0x24, 0, 0, 30],
+    ],
   },
   oldpetrol: {
     label: 'Simulator: older petrol car',
@@ -161,19 +192,25 @@ export const MOCK_PROFILES = {
       '18DAF110': {
         name: 'engine',
         pids01: [0x01, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x21, 0x23, 0x2C, 0x2F, 0x31, 0x33, 0x42, 0x46, 0x4D, 0x4E, 0x51, 0x5E, 0x61, 0x62, 0x63, 0xA6],
-        pids09: [0x02],
+        pids09: [0x02, 0x04, 0x06, 0x0A, 0x0B],
+        info: { name: 'ECM-EngineControl', calid: 'SIMCAL-DSL-0200', cvn: [0x0d, 0x1e, 0x2f, 0x30], ipt: IPT_DIESEL },
         dtcs: true,
         delay: () => 50,
       },
       '18DAF118': {
         name: 'transmission',
         pids01: [0x01, 0x0D],
-        pids09: [],
+        pids09: [0x04, 0x0A],
+        info: { name: 'TCM-TransmissionCtl', calid: 'SIMCAL-TRN-0201', cvn: [] },
         dtcs: false,
         delay: () => 35,
       },
     },
     faults: { stored: [], pending: ['P0401'], permanent: [] },
+    tests06: [
+      [0x31, 0x80, 0x27, 1850, 1200, 2600],
+      [0xb0, 0x80, 0x1a, 6, 0, 20],
+    ],
   },
 };
 
@@ -206,6 +243,12 @@ export class SimElm {
     this.headers = false;
     this.searched = false;
     this.last = null;
+  }
+
+  /** Park (ignition on, engine off) or start up. Starting a conventional engine cranks briefly. */
+  setParked(parked) {
+    if (this.opts.parked && !parked && !this.profile.hybrid) this.crankingUntil = Date.now() + 1300;
+    this.opts.parked = !!parked;
   }
 
   input(text) {
@@ -244,7 +287,15 @@ export class SimElm {
       baro: 101,
       maf: engineOn ? (rpm / 1000) * (load / 10) : 0,
       fuel: Math.max(5, 62 - t * 0.002),
-      volts: engineOn || this.profile.hybrid ? 14.15 + Math.sin(t / 7) * 0.05 : 12.6,
+      // 12 V system: resting when parked, a dip while a conventional engine cranks, charging once running.
+      volts:
+        this.crankingUntil && Date.now() < this.crankingUntil
+          ? 10.1 + Math.sin(t * 7) * 0.15
+          : parked
+            ? 12.55 + Math.sin(t / 7) * 0.02
+            : engineOn || this.profile.hybrid
+              ? 14.15 + Math.sin(t / 7) * 0.05
+              : 12.6,
       hvBattery: 78,
       stft: engineOn ? Math.sin(t * 2) * 3 : 0,
       ltft: engineOn ? 2.3 : 0,
@@ -384,6 +435,21 @@ export class SimElm {
       }
       return [[0x44]];
     }
+    if (mode === 0x06) {
+      // Self-test results, CAN layout only, from the computer that holds the codes.
+      if (this.kind === 'legacy' || !ecu.dtcs || !this.profile.tests06) return null;
+      const tests = this.profile.tests06;
+      const mids = [...new Set(tests.map((t) => t[0]))];
+      const mid = args[0];
+      if (mid === undefined) return null;
+      if (mid % 0x20 === 0) {
+        if (mid !== 0 && !mids.some((m) => m > mid)) return null;
+        return [[0x46, mid, ...bitmap(mids, mid)]];
+      }
+      const recs = tests.filter((t) => t[0] === mid);
+      if (!recs.length) return null;
+      return [[0x46, ...recs.flatMap(([m, tid, uas, v, lo, hi]) => [m, tid, uas, ...u16(v), ...u16(lo), ...u16(hi)])]];
+    }
     if (mode === 0x09) {
       const pid = args[0];
       if (pid === 0x00) return ecu.pids09.length ? [[0x49, 0x00, ...bitmap(ecu.pids09, 0)]] : null;
@@ -393,6 +459,12 @@ export class SimElm {
         const padded = [0, 0, 0, ...vin]; // 20 bytes → 5 messages of 4
         return [0, 1, 2, 3, 4].map((i) => [0x49, 0x02, i + 1, ...padded.slice(i * 4, i * 4 + 4)]);
       }
+      const info = ecu.info;
+      if (legacy || !info || !ecu.pids09.includes(pid)) return null;
+      if (pid === 0x04) return [[0x49, 0x04, 0x01, ...asciiPad(info.calid, 16)]];
+      if (pid === 0x06) return info.cvn.length ? [[0x49, 0x06, 0x01, ...info.cvn]] : null;
+      if (pid === 0x0A) return [[0x49, 0x0a, 0x01, ...asciiPad(info.name, 20)]];
+      if ((pid === 0x08 || pid === 0x0B) && info.ipt) return [[0x49, pid, info.ipt.length, ...info.ipt.flatMap(u16)]];
       return null;
     }
     // Anything else: service not supported (the app should never send these).

@@ -5,12 +5,19 @@ import { Logger } from './logger.js';
 import { Elm327, CommandRejected } from './elm327.js';
 import { BleTransport, bleAvailable, describeError } from './transport/ble.js';
 import { MockTransport, MOCK_PROFILES } from './transport/mock.js';
-import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, setNickname } from './vehicle.js';
+import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, setNickname, setEcuNames, ecuLabel } from './vehicle.js';
 import { load, save } from './storage.js';
 import { readAllCodes, checkClearConditions, clearAndVerify } from './diagnostics.js';
 import { loadDtcTable } from './obd/dtc.js';
 import { LivePoller, defaultTiles, isLivePid, AutoDrive, livePids } from './poller.js';
-import { DEFAULT_UNITS } from './obd/pids.js';
+import { DEFAULT_UNITS, formatValue } from './obd/pids.js';
+import { readMonitorTests } from './obd/mode06.js';
+import { readVehicleInfo } from './obd/vehicleinfo.js';
+import { decodeVin } from './obd/vin.js';
+import { loadHistory, saveHistory, updateHistory, recordClear } from './history.js';
+import { loadMaintenance, saveMaintenance, addEntry, removeEntry, setDue, maintenanceFor, dueStatus, describeDue } from './maintenance.js';
+import { sampleVoltage, average, rateResting, rateCranking, rateCharging, engineStarted, crankMinimum } from './battery.js';
+import { buildReport } from './report.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const DEFAULT_SETTINGS = {
@@ -101,6 +108,13 @@ export const app = {
   diag: null, // last fault-code read (see diagnostics.js readAllCodes)
   dtcTable: {},
   clearFlow: null, // { step: 'warn' | 'conditions' | 'confirm' | 'result', ... }
+  selfTests: null, // mode 06 results (obd/mode06.js readMonitorTests)
+  vehicleInfo: null, // mode 09 names / calibration IDs per ECU
+  history: loadHistory(), // fault-code history per vehicle
+  maintenance: loadMaintenance(), // maintenance log per vehicle
+  batteryTest: null, // { step, skipCrank, live, resting, crankMin, charging, ... }
+  batteryResults: load('battery', {}), // last battery test per vehicle
+  report: null, // { title, html, text }
   live: null, // LivePoller while the Live screen is polling
   liveDetail: null, // PID shown full-screen on the Live screen
   liveSeconds: 60, // graph window on the detail view
@@ -116,6 +130,7 @@ export const app = {
   },
 
   set(patch) {
+    if ('profile' in patch) setEcuNames(patch.profile?.ecuNames);
     Object.assign(this, patch);
     for (const fn of this._listeners) fn(this);
   },
@@ -188,7 +203,7 @@ export const app = {
       p = Promise.reject(err);
     }
     this.logger.info(`Connect: ${t.label} (app v${this.version})`);
-    this.set({ status: 'connecting', busy: 'Connecting…', error: null, notice: null, init: null, identify: null, profile: null, snapshot: null, diag: null, clearFlow: null });
+    this.set({ status: 'connecting', busy: 'Connecting…', error: null, notice: null, init: null, identify: null, profile: null, snapshot: null, diag: null, clearFlow: null, selfTests: null, vehicleInfo: null, batteryTest: null, report: null });
     p.then(
       async () => {
         this._attach(t);
@@ -274,6 +289,9 @@ export const app = {
       const adapter = { ...(this.transport?.info ?? {}), id: this.init?.adapterId ?? null };
       delete adapter.services;
       const found = await discoverVehicle(this.elm, { adapter, onStep: (s) => this.set({ progress: s }) });
+      const vehicleInfo = await readVehicleInfo(this.elm, found, { onStep: (s) => this.set({ progress: s }) });
+      found.ecuNames = Object.fromEntries(Object.entries(vehicleInfo).filter(([, v]) => v.name).map(([id, v]) => [id, v.name.name]));
+      this.set({ vehicleInfo });
       if (this.demo) {
         // The demo car is never saved, so it can't clutter Saved vehicles.
         this.set({ profile: found, notice: 'This is a simulated demo car: the values are made up and nothing is saved. Have a look at Vehicle and Console.' });
@@ -398,7 +416,7 @@ export const app = {
 
   setSimParked(parked) {
     if (this.transport?.kind !== 'mock' || !this.transport.sim) return;
-    this.transport.sim.opts.parked = !!parked;
+    this.transport.sim.setParked(!!parked);
     this.logger.info(`Simulator: car ${parked ? 'parked (ignition on, engine off)' : 'driving'}`);
     this.set({});
   },
@@ -409,6 +427,7 @@ export const app = {
     await this._action('Reading fault codes…', async () => {
       const [diag, dtcTable] = await Promise.all([readAllCodes(this.elm, { onStep: (s) => this.set({ progress: s }) }), loadDtcTable()]);
       this.set({ diag, dtcTable });
+      this._recordHistory(diag);
     });
   },
 
@@ -445,6 +464,198 @@ export const app = {
     });
     // Whatever happened, show the result; never try again automatically.
     this.set({ clearFlow: { step: 'result', outcome }, diag: outcome?.after ?? this.diag });
+    if (outcome && this._savesData) {
+      const history = updateHistory(recordClear(this.history, this.profile.key, outcome), this.profile.key, outcome.after);
+      saveHistory(history);
+      this.set({ history });
+    }
+  },
+
+  // --- saved per-vehicle data (never for the demo car) -----------------------------
+
+  get _savesData() {
+    return !!this.profile && !this.demo;
+  },
+
+  _recordHistory(diag) {
+    if (!this._savesData || !diag) return;
+    const history = updateHistory(this.history, this.profile.key, diag);
+    saveHistory(history);
+    this.set({ history });
+  },
+
+  // --- self-tests (mode 06) and vehicle info (mode 09) --------------------------
+
+  async runSelfTests() {
+    await this._action('Reading self-test results…', async () => {
+      const selfTests = await readMonitorTests(this.elm, { onStep: (s) => this.set({ progress: s }) });
+      this.set({ selfTests });
+    });
+  },
+
+  async runVehicleInfo() {
+    if (!this.profile) return;
+    await this._action('Reading vehicle details…', async () => {
+      const vehicleInfo = await readVehicleInfo(this.elm, this.profile, { onStep: (s) => this.set({ progress: s }) });
+      const ecuNames = Object.fromEntries(Object.entries(vehicleInfo).filter(([, v]) => v.name).map(([id, v]) => [id, v.name.name]));
+      const profile = this._savesData ? saveProfile({ ...this.profile, ecuNames }) : { ...this.profile, ecuNames };
+      this.set({ vehicleInfo, profile, profiles: loadProfiles() });
+    });
+  },
+
+  get decodedVin() {
+    return this.profile?.vin ? decodeVin(this.profile.vin) : null;
+  },
+
+  // --- battery and charging test ------------------------------------------------
+
+  startBatteryTest() {
+    this.set({ batteryTest: { step: 'intro', skipCrank: false, live: null }, error: null, notice: null });
+  },
+
+  updateBattery(patch) {
+    if (this.batteryTest) this.set({ batteryTest: { ...this.batteryTest, ...patch } });
+  },
+
+  cancelBatteryTest() {
+    this.set({ batteryTest: null });
+  },
+
+  async runBatteryResting() {
+    await this._action('Measuring the resting voltage…', async () => {
+      const samples = await sampleVoltage(this.elm, 3000, { onSample: (v) => this.updateBattery({ live: v }) });
+      const resting = average(samples);
+      this.logger.info(`Battery test: resting ${resting?.toFixed(2)} V from ${samples.length} readings`);
+      this.updateBattery({ resting, step: this.batteryTest?.skipCrank ? 'charge-ready' : 'crank-ready' });
+    });
+  },
+
+  async runBatteryCrank() {
+    await this._action('Start the engine now…', async () => {
+      // Simulators: the engine "starts" by itself a moment into this step.
+      if (this.simParked) setTimeout(() => this.setSimParked(false), 1500);
+      const samples = await sampleVoltage(this.elm, 20000, { stop: engineStarted, onSample: (v) => this.updateBattery({ live: v }) });
+      const started = engineStarted(samples);
+      const crankMin = crankMinimum(samples);
+      this.logger.info(`Battery test: ${started ? 'engine start seen' : 'no engine start seen'}, lowest ${crankMin?.toFixed(2)} V`);
+      this.updateBattery({ crankMin: started ? crankMin : null, crankSeen: started, step: 'charge-ready' });
+    });
+    if (this.batteryTest?.crankSeen) await this.runBatteryCharging();
+  },
+
+  async runBatteryCharging() {
+    await this._action('Measuring the charging voltage…', async () => {
+      if (this.simParked) this.setSimParked(false); // simulators: switch on fully first
+      const samples = await sampleVoltage(this.elm, 4000, { onSample: (v) => this.updateBattery({ live: v }) });
+      const charging = average(samples);
+      this.logger.info(`Battery test: charging ${charging?.toFixed(2)} V`);
+      this._finishBattery({ charging });
+    });
+  },
+
+  _finishBattery(patch) {
+    const b = { ...this.batteryTest, ...patch };
+    const restingRating = rateResting(b.resting);
+    const crankRating = b.skipCrank ? null : rateCranking(b.crankMin);
+    const chargingRating = rateCharging(b.charging);
+    const order = ['good', 'ok', 'low', 'weak'];
+    const levels = [restingRating, crankRating, chargingRating].filter((r) => r && r.level !== 'unknown').map((r) => r.level);
+    const overall = levels.sort((x, y) => order.indexOf(y) - order.indexOf(x))[0] ?? 'unknown';
+    const result = { at: Date.now(), resting: b.resting, crankMin: b.crankMin ?? null, charging: b.charging, skippedCrank: !!b.skipCrank, restingRating, crankRating, chargingRating, overall };
+    let batteryResults = this.batteryResults;
+    if (this._savesData) {
+      batteryResults = { ...batteryResults, [this.profile.key]: result };
+      save('battery', batteryResults);
+    }
+    this.set({ batteryTest: { ...b, step: 'result', result }, batteryResults });
+  },
+
+  get lastBattery() {
+    return this.batteryTest?.result ?? (this.profile ? this.batteryResults[this.profile.key] : null) ?? null;
+  },
+
+  // --- maintenance log ------------------------------------------------------------
+
+  get maintenanceHere() {
+    return this.profile ? maintenanceFor(this.maintenance, this.profile.key) : null;
+  },
+
+  get dueHere() {
+    const m = this.maintenanceHere;
+    return m ? dueStatus(m.due).map((d) => ({ ...d, text: describeDue(d) })) : [];
+  },
+
+  _saveMaintenance(maintenance) {
+    saveMaintenance(maintenance);
+    this.set({ maintenance });
+  },
+
+  addMaintenance(entry) {
+    if (this._savesData) this._saveMaintenance(addEntry(this.maintenance, this.profile.key, entry));
+  },
+
+  removeMaintenance(id) {
+    if (this._savesData) this._saveMaintenance(removeEntry(this.maintenance, this.profile.key, id));
+  },
+
+  setMaintenanceDue(patch) {
+    if (this._savesData) this._saveMaintenance(setDue(this.maintenance, this.profile.key, patch));
+  },
+
+  // --- health report ------------------------------------------------------------------
+
+  async runReport({ includeValues = true } = {}) {
+    if (!this.profile) return;
+    await this._action('Preparing the health report…', async () => {
+      const step = (s) => this.set({ progress: s });
+      const [diag, dtcTable] = await Promise.all([readAllCodes(this.elm, { onStep: step }), loadDtcTable()]);
+      this.set({ diag, dtcTable });
+      this._recordHistory(diag);
+      if (!this.vehicleInfo) this.set({ vehicleInfo: await readVehicleInfo(this.elm, this.profile, { onStep: step }) });
+      if (!this.selfTests) this.set({ selfTests: await readMonitorTests(this.elm, { onStep: step }) });
+      let values = [];
+      if (includeValues) {
+        step('current values');
+        const rows = await snapshot(this.elm, this.profile);
+        const units = this.settings.units;
+        values = rows.filter((r) => r.value != null && typeof r.value !== 'object').map((r) => ({ name: r.name, text: formatValue(r.pid, r.value, units) }));
+      }
+      this.set({ report: buildReport(this.reportData(values)) });
+      this.logger.info('Health report created');
+    });
+  },
+
+  reportData(values = []) {
+    const p = this.profile;
+    const vin = this.decodedVin;
+    const units = this.settings.units;
+    const diag = this.diag && {
+      ...this.diag,
+      freeze: this.diag.freeze && { ...this.diag.freeze, values: this.diag.freeze.values.map((x) => ({ ...x, display: formatValue(x.pid, x.value, units) })) },
+    };
+    return {
+      appName: this.name,
+      version: this.version,
+      generatedAt: Date.now(),
+      vehicle: {
+        name: p.nickname ?? null,
+        vin: p.vin,
+        simulated: this.transport?.kind === 'mock',
+        make: vin?.manufacturer,
+        region: vin?.region,
+        modelYear: vin?.modelYear,
+        protocol: p.protocolName ?? p.protocol,
+        fuelType: typeof p.fuelType === 'string' ? p.fuelType : null,
+      },
+      ecus: Object.keys(p.ecus).map((id) => ({ id, calIds: this.vehicleInfo?.[id]?.calIds ?? [], cvns: this.vehicleInfo?.[id]?.cvns ?? [] })),
+      ecuLabel,
+      diag,
+      dtcTable: this.dtcTable,
+      selfTests: this.selfTests,
+      battery: this.lastBattery,
+      maintenance: this._savesData ? { due: this.dueHere, entries: this.maintenanceHere.entries } : null,
+      values,
+    };
   },
 
   renameProfile(key, nickname) {

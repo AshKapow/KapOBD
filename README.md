@@ -9,6 +9,11 @@
 - **Vehicle check:** the warning-light status, how many fault codes are stored, and the readiness monitors, which tell you whether an emissions test (e.g. an MOT) is likely to pass.
 - **Fault codes:** stored, pending and permanent, with plain-English descriptions and the freeze frame (what the engine was doing when the fault happened).
 - **Clear codes:** turn the warning light off after a repair, with clear warnings, an engine-off check and two confirmations first.
+- **Self-test results:** the car's own pass/fail figures for its emissions checks (catalyst, O2 sensors, misfire counts), which can show a problem developing before a fault code appears.
+- **Health report:** a tidy one-page summary of the car (codes, readiness, battery, values) to share, save or print.
+- **Battery and charging test:** resting voltage, the dip while starting, and charging voltage.
+- **Vehicle details:** make and region from the VIN, and each of the car's computers by name.
+- **Code history and maintenance log:** see whether a code keeps coming back, and keep service and MOT dates with reminders.
 - **Several cars:** each car is remembered by its VIN, and you can give it a name.
 - **Read-only by design.** See [Safety](#safety).
 
@@ -78,6 +83,21 @@ On hybrids, the badge at the top shows when the engine is off and the car is dri
 
 Clearing codes doesn't fix anything; if the fault is still there, the code comes back. It also resets the readiness monitors, so an emissions test (such as an MOT) may fail until the car has been driven for a few days. Some cars with a security gateway refuse to clear codes with a generic tool. KapOBD tells you if that happens and never tries again on its own.
 
+### Self-test results and code history
+
+On **Codes**, **Read self-test results** shows the car's own emissions-check results, grouped by system, with any outside the car's limits listed first. Some results are in units KapOBD doesn't recognise; they're shown as raw numbers, but pass or fail is still correct.
+
+Each time you read a car's codes, KapOBD keeps a history for that car: when each code was first and last seen, and whether it went away or came back. For self-checks that aren't complete, the Codes screen suggests the kind of driving that usually completes them.
+
+### Vehicle tools
+
+On **Vehicle**:
+
+- **Create health report** reads the codes, readiness, self-tests and (optionally) every current value, and produces a one-page report. **Share** it, **Download** it, **Copy as text**, or **Print** it to save as a PDF. It includes the VIN; remove it before posting publicly if you'd rather keep it private.
+- **Battery test** checks the 12 V battery in three steps: resting voltage with the engine off, the dip while you start the engine, and the charging voltage once it's running. On hybrids and electric cars, tick the option to skip the starting step. It's a quick check using rules of thumb; a garage load test is the definitive answer.
+- **Maintenance** keeps dated entries (service, MOT, tyres and so on) and the next MOT and service dates. Reminders appear on the Vehicle screen when they're due within 30 days.
+- **Computers** lists each of the car's computers by name, with calibration IDs and how often each self-check has completed.
+
 ### Tips
 
 - **Hybrids:** the engine is often off while the car is on, so RPM 0 or some missing engine values are normal.
@@ -111,7 +131,8 @@ Everything stays on your device. KapOBD has no server, accounts, tracking or ana
 KapOBD only ever sends:
 
 - adapter setup commands (`AT…`), except a few that could reconfigure or flood the adapter
-- the read-only OBD-II requests for live data, freeze-frame data, fault codes and the VIN (modes `01`, `02`, `03`, `07`, `09` and `0A`)
+- the read-only OBD-II requests for live data, freeze-frame data, fault codes, self-test results and vehicle information (modes `01`, `02`, `03`, `06`, `07`, `09` and `0A`)
+- the adapter's own battery-voltage reading (`ATRV`) for the battery test
 
 Clearing fault codes (mode `04`) is only possible from the **Codes** screen, after the warnings, an engine-off check and two confirmations. It's sent once, never from the Console, and never retried automatically. Anything that could write to, reset or unlock a car's computers is refused before it reaches the adapter.
 

@@ -326,3 +326,30 @@ body.driving main { padding-top: 12px; }
 .about-brand strong { font-size: 22px; }
 .about-brand span { color: var(--muted); }
 .about-brand small { color: var(--muted); }
+
+/* --- Codes screen additions --- */
+.monitors li .tip { display: block; color: var(--muted); font-size: 13px; margin: 2px 0 6px 22px; }
+.monitors li.notready { break-inside: avoid; }
+.result-good { color: var(--ok); font-weight: 600; }
+.result-bad { color: var(--warn); font-weight: 600; }
+details.selftest { border-top: 1px solid var(--line); padding: 6px 0; }
+details.selftest > summary { cursor: pointer; min-height: 32px; }
+.selftest .table { margin: 6px 0; }
+.selftest tr.fail td { color: var(--warn); }
+.history .code.gone > code { color: var(--muted); }
+
+/* --- Vehicle screen additions --- */
+details.ecu { border-top: 1px solid var(--line); padding: 8px 0; }
+details.ecu > summary { cursor: pointer; min-height: 32px; font-weight: 600; }
+details.ecu details > summary { cursor: pointer; color: var(--muted); min-height: 32px; }
+.report-frame { width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.battery-live { font-size: 44px; font-weight: 700; margin: 6px 0; }
+.battery-live .unit { font-size: 18px; color: var(--muted); }
+.battery-overall { font-size: 18px; font-weight: 700; }
+.battery-overall.good { color: var(--ok); }
+.battery-overall.ok, .battery-overall.low { color: var(--warn); }
+.battery-overall.weak { color: var(--err); }
+.due { display: flex; gap: 16px; flex-wrap: wrap; }
+.maint-form { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.maint-form .row input, .maint-form .row select { flex: 1; min-width: 160px; }
+input[type="date"], input[type="number"] { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; min-height: 40px; padding: 6px 10px; color-scheme: dark; }

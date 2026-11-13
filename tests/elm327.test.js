@@ -6,7 +6,7 @@ import { Logger } from '../js/logger.js';
 // --- allow-list --------------------------------------------------------------
 
 test('allow-list accepts AT commands and read-only OBD modes', () => {
-  for (const c of ['ATZ', 'at e0', 'ATSP0', 'ATDPN', 'ATSH7E0', 'AT@1', '0100', '010C', '010C0D', '020200', '03', '07', '0A', '0902']) {
+  for (const c of ['ATZ', 'at e0', 'ATSP0', 'ATDPN', 'ATSH7E0', 'AT@1', '0100', '010C', '010C0D', '020200', '03', '0600', '06A2', '07', '0A', '0902']) {
     assert.equal(checkCommand(c).ok, true, c);
   }
 });
@@ -196,4 +196,10 @@ test('write failures are reported, not thrown', async () => {
   const elm = new Elm327(t, new Logger());
   const r = await elm.send('ATI');
   assert.equal(r.error, 'WRITE_FAILED');
+});
+
+test('mode 06 is read-only monitor results: one MID per request, nothing else', () => {
+  assert.equal(checkCommand('0601').ok, true);
+  assert.equal(checkCommand('06').ok, false, 'needs a MID');
+  assert.equal(checkCommand('060102').ok, false, 'one MID only');
 });
