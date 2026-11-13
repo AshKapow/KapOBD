@@ -89,7 +89,7 @@ function overview(app) {
     ),
     h('p', { class: 'hint', 'data-rate': '' }),
     showsUnverified ? h('p', { class: 'hint' }, 'The hybrid battery voltage uses a formula that hasn’t been confirmed on a real car yet. Treat it as approximate.') : null,
-    h('p', { class: 'hint' }, 'Tap a value for a bigger graph. On hybrids, engine values often stop while the engine is off; that’s normal.'),
+    h('p', { class: 'hint' }, `Tap a value for a bigger graph.${app.settings.autoDriving ? ' Once the car is moving, this screen switches to the driving view by itself.' : ''} On hybrids, engine values often stop while the engine is off; that’s normal.`),
   ];
 }
 
@@ -185,6 +185,17 @@ function tilePicker(app) {
           ),
         );
       }),
+    ),
+    h(
+      'div',
+      { class: 'card' },
+      h('h3', {}, 'Driving view'),
+      h(
+        'label',
+        { class: 'check' },
+        h('input', { type: 'checkbox', checked: app.settings.autoDriving, onchange: (e) => app.updateSettings({ autoDriving: e.target.checked }) }),
+        'Switch to the driving view automatically once the car is moving (above 5 mph)',
+      ),
     ),
     h('div', { class: 'card' }, h('h3', {}, 'Units'), unitSelect('Speed', 'speed', [['mph', 'mph'], ['kmh', 'km/h']]), unitSelect('Temperature', 'temp', [['C', '°C'], ['F', '°F']]), unitSelect('Distance', 'distance', [['mi', 'miles'], ['km', 'km']])),
     h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => app.set({ editingTiles: false }) }, 'Done'), h('button', { class: 'btn secondary', onclick: () => app.resetTiles() }, 'Reset to defaults')),

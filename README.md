@@ -61,7 +61,7 @@ Open https://ashkapow.github.io/KapOBD/ with Bluetooth turned on: in Chrome on A
 2. Each tile shows the latest value and a small graph of the last minute. A greyed-out value means the car hasn't answered for a few seconds.
 3. Tap a tile for a big graph of the last minute or five minutes. Touch the graph to read the value at any moment, with the lowest, highest and average underneath.
 4. **Choose values** picks which tiles to show (up to eight, saved for each car) and sets the units: mph or km/h, °C or °F, miles or km.
-5. **Driving view** shows the first four tiles in large numbers with nothing else on screen. Set it up before you drive, and don't use the phone while driving.
+5. **Driving view** shows the first four tiles in large numbers with nothing else on screen. If the Live screen is open when the car starts moving (above 5 mph for a few seconds), KapOBD switches to it by itself, so there's nothing to tap on the road. You can turn that off under **Choose values**. Set everything up before you drive, keep the phone in a holder, and don't use it while driving.
 
 On hybrids, the badge at the top shows when the engine is off and the car is driving on electric power. Engine values like RPM often stop updating while the engine is off; that's normal.
 

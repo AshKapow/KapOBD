@@ -148,3 +148,34 @@ test('hybrid battery detail (current, power) is kept with the value', async () =
   assert.equal(typeof l.detail.current, 'number');
   assert.ok(elm.log.entries.some((e) => e.text.includes('PID 9A (unverified formula)')), 'first raw reply logged');
 });
+
+test('auto driving view: after 3 s above 5 mph, not before, and respects Exit until stopped', async () => {
+  const { AutoDrive } = await import('../js/poller.js');
+  const a = new AutoDrive();
+  let t = 0;
+  assert.equal(a.update(30, (t += 1000)), false, 'just started moving');
+  assert.equal(a.update(30, (t += 1000)), false, '1 s');
+  assert.equal(a.update(30, (t += 1000)), false, '2 s');
+  assert.equal(a.update(30, (t += 1000)), true, '3 s above 8 km/h');
+  assert.equal(a.update(30, (t += 1000), { driving: true }), false, 'already in driving view');
+
+  // User taps Exit while still moving: no switching back...
+  a.dismiss();
+  assert.equal(a.update(40, (t += 5000)), false);
+  // ...until the car stops and sets off again.
+  assert.equal(a.update(0, (t += 1000)), false);
+  assert.equal(a.update(20, (t += 1000)), false);
+  assert.equal(a.update(20, (t += 3000)), true);
+
+  // Crawling below 5 mph never switches; unknown speed changes nothing.
+  const b = new AutoDrive();
+  for (let i = 0; i < 10; i++) assert.equal(b.update(6, i * 1000), false);
+  assert.equal(b.update(null, 20000), false);
+});
+
+test('speed and RPM are always polled while live, without duplicating tiles', async () => {
+  const { livePids } = await import('../js/poller.js');
+  assert.deepEqual(livePids([0x05, 0x42], [0x05, 0x0c, 0x0d, 0x42]), [0x05, 0x42, 0x0d, 0x0c]);
+  assert.deepEqual(livePids([0x0d, 0x0c], [0x0c, 0x0d]), [0x0d, 0x0c]);
+  assert.deepEqual(livePids([0x05], [0x05]), [0x05], 'a car without speed/RPM just polls its tiles');
+});

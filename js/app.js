@@ -9,7 +9,7 @@ import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, se
 import { load, save } from './storage.js';
 import { readAllCodes, checkClearConditions, clearAndVerify } from './diagnostics.js';
 import { loadDtcTable } from './obd/dtc.js';
-import { LivePoller, defaultTiles, isLivePid } from './poller.js';
+import { LivePoller, defaultTiles, isLivePid, AutoDrive, livePids } from './poller.js';
 import { DEFAULT_UNITS } from './obd/pids.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   sim: { noDataRate: 0, dropRate: 0, tinyFragments: false, parked: false },
   units: { ...DEFAULT_UNITS }, // speed mph|kmh, temp C|F, distance mi|km
   tiles: {}, // per vehicle profile key: the live tiles chosen, in order
+  autoDriving: true, // switch to the driving view once the car is moving
 };
 
 export const MAX_TILES = 8;
@@ -314,8 +315,18 @@ export const app = {
     if (this._liveTimer) return;
     this._liveTimer = setTimeout(() => {
       this._liveTimer = null;
+      this._checkAutoDrive();
       for (const fn of this._liveListeners) fn(this);
     }, 250);
+  },
+
+  _checkAutoDrive() {
+    if (!this.live || !this._autoDrive || !this.settings.autoDriving) return;
+    const speed = this.live.value(0x0d, 3000); // km/h
+    if (this._autoDrive.update(speed, Date.now(), { driving: this.driving })) {
+      this.logger.info('Car is moving: switched to the driving view automatically');
+      this.setDriving(true);
+    }
   },
 
   /** The tiles for the current vehicle: saved choice, else the defaults. */
@@ -332,7 +343,7 @@ export const app = {
     if (!p) return;
     const tiles = list.filter((pid) => p.supported01.includes(pid) && isLivePid(pid)).slice(0, MAX_TILES);
     this.updateSettings({ tiles: { ...this.settings.tiles, [p.key]: tiles } });
-    this.live?.setPids(tiles);
+    this.live?.setPids(livePids(tiles, p.supported01));
   },
 
   resetTiles() {
@@ -341,7 +352,7 @@ export const app = {
     const tiles = { ...this.settings.tiles };
     delete tiles[p.key];
     this.updateSettings({ tiles });
-    this.live?.setPids(this.tiles());
+    this.live?.setPids(livePids(this.tiles(), p.supported01));
   },
 
   get canGoLive() {
@@ -350,8 +361,10 @@ export const app = {
 
   startLive() {
     if (this.live || !this.canGoLive) return;
+    this._autoDrive = new AutoDrive();
     const poller = new LivePoller(this.elm, {
-      pids: this.tiles(),
+      // Speed and RPM always, for the engine badge and auto driving view.
+      pids: livePids(this.tiles(), this.profile.supported01),
       ecus: this.profile.ecus,
       onUpdate: () => this._liveChanged(),
       onStop: (reason) => {
@@ -372,7 +385,10 @@ export const app = {
   },
 
   setDriving(on) {
+    // Leaving the driving view while moving means "not now": don't switch back until the car stops.
+    if (!on && this.driving) this._autoDrive?.dismiss();
     this.set({ driving: !!on, liveDetail: null, editingTiles: false });
+    if (on) globalThis.scrollTo?.(0, 0);
   },
 
   /** Simulators only: park the car (codes can be cleared) or drive it (live data moves). */

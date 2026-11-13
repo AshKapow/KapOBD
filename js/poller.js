@@ -224,3 +224,45 @@ export class LivePoller {
     this._window = { at: now, requests: 0, answered: 0, timeouts: this.elm.stats.timeouts };
   }
 }
+
+/**
+ * Decides when to switch to the driving view by itself: once the car has
+ * been above `kmh` for `holdMs`. If the user leaves the driving view while
+ * moving, it stays out until the car has stopped.
+ */
+export class AutoDrive {
+  constructor({ kmh = 8, holdMs = 3000, stopKmh = 1 } = {}) {
+    this.kmh = kmh;
+    this.holdMs = holdMs;
+    this.stopKmh = stopKmh;
+    this.movingSince = null;
+    this.dismissed = false;
+  }
+
+  /** Feed the latest speed (km/h, or null if unknown). Returns true when it's time to switch. */
+  update(speedKmh, now = Date.now(), { driving = false } = {}) {
+    if (speedKmh == null) return false;
+    if (speedKmh <= this.stopKmh) {
+      this.movingSince = null;
+      this.dismissed = false; // stopped: the next drive may switch again
+      return false;
+    }
+    if (speedKmh < this.kmh) {
+      this.movingSince = null;
+      return false;
+    }
+    this.movingSince ??= now;
+    return !driving && !this.dismissed && now - this.movingSince >= this.holdMs;
+  }
+
+  /** The user left the driving view: respect it until the car stops. */
+  dismiss() {
+    this.dismissed = true;
+  }
+}
+
+/** Speed and RPM are always polled while live, for the engine badge and auto-switching. */
+export function livePids(tiles, supported) {
+  const extra = [0x0d, 0x0c].filter((p) => supported.includes(p) && !tiles.includes(p));
+  return [...tiles, ...extra];
+}
