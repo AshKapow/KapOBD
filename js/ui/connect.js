@@ -1,6 +1,7 @@
 import { h, replace, messageBox } from './dom.js';
 import { MOCK_PROFILES } from '../transport/mock.js';
 import { load, save } from '../storage.js';
+import { plausibleVoltage } from '../battery.js';
 
 // Developer mode only (?dev): every simulator, for testing without a car.
 const TRANSPORTS = [
@@ -151,7 +152,7 @@ function statusCard(app) {
     ['Device', app.transport?.label || i?.device],
     ['Bluetooth', i && !app.demo ? `service ${i.service} · notify ${i.notify} · write ${i.write} (${i.writeMode} response)` : null],
     ['Adapter ID', init?.adapterId ?? app.identify?.id],
-    ['Adapter voltage', init?.voltage],
+    ['Adapter voltage', init?.voltage ? `${init.voltage}${plausibleVoltage(parseFloat(init.voltage)) ? '' : ' (looks wrong for a 12 V car; the adapter may misreport voltage)'}` : null],
     ['Protocol', init?.protocolName ?? init?.protocol],
     ['ECUs answering', init?.ecus?.join(', ')],
     ['VIN', app.profile ? app.profile.vin ?? 'not reported' : null],

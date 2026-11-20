@@ -148,6 +148,15 @@ export function setNickname(key, nickname) {
   return all[key];
 }
 
+/** A registration plate, as the owner typed it (cars don't report it). Empty clears it. */
+export function setRegistration(key, registration) {
+  const all = loadProfiles();
+  if (!all[key]) return null;
+  all[key].registration = String(registration ?? '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12) || null;
+  save('profiles', all);
+  return all[key];
+}
+
 export function deleteProfile(key) {
   const all = loadProfiles();
   delete all[key];

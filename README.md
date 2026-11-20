@@ -14,7 +14,7 @@
 - **Battery and charging test:** resting voltage, the dip while starting, and charging voltage.
 - **Vehicle details:** make and region from the VIN, and each of the car's computers by name.
 - **Code history and maintenance log:** see whether a code keeps coming back, and keep service and MOT dates with reminders.
-- **Several cars:** each car is remembered by its VIN, and you can give it a name.
+- **Several cars:** each car is remembered by its VIN, and you can give it a name and registration.
 - **Read-only by design.** See [Safety](#safety).
 
 KapOBD is an early version: the live dashboard and reading and clearing fault codes all work now. Recording drives and trip summaries are on the way.
@@ -32,7 +32,7 @@ KapOBD is an early version: the live dashboard and reading and clearing fault co
 | **On a computer** | Chrome or Edge. Firefox and Safari can't use Bluetooth. |
 | **A car** | Any car with a standard OBD-II port: in the UK and Europe, petrol cars from 2001 and diesels from 2004; in the US, cars from 1996. All the usual protocols are supported (CAN, K-line/KWP2000 and J1850). |
 
-A generic OBD tool like this sees engine and emissions data. It can't reach airbag, ABS, body or other manufacturer-specific systems. Some newer cars also have a "security gateway" that blocks clearing fault codes; KapOBD will tell you if that happens.
+A generic OBD tool like this sees engine and emissions data. Warnings such as tyre pressure, ABS and airbag are kept by the car's other computers: KapOBD has an experimental check that asks them for their codes (see **Other warning lights** below), but whether they answer depends on the make, and some aren't reachable with a basic adapter. Some newer cars also have a "security gateway" that blocks clearing fault codes; KapOBD will tell you if that happens.
 
 ---
 
@@ -89,12 +89,19 @@ On **Codes**, **Read self-test results** shows the car's own emissions-check res
 
 Each time you read a car's codes, KapOBD keeps a history for that car: when each code was first and last seen, and whether it went away or came back. For self-checks that aren't complete, the Codes screen suggests the kind of driving that usually completes them.
 
+### Other warning lights (experimental)
+
+The engine warning light and codes on **Codes** cover the engine and emissions only. A tyre-pressure, ABS or airbag light won't show there, because those warnings are kept by other computers in the car.
+
+**Check other computers** asks each computer KapOBD found, plus a few common addresses (such as ABS), for its own fault codes. It only reads; nothing is changed. The codes are manufacturer-specific, so KapOBD shows them without descriptions; a dealer or a manufacturer-specific tool can explain them.
+
 ### Vehicle tools
 
 On **Vehicle**:
 
-- **Create health report** reads the codes, readiness, self-tests and (optionally) every current value, and produces a one-page report. **Share** it, **Download** it, **Copy as text**, or **Print** it to save as a PDF. It includes the VIN; remove it before posting publicly if you'd rather keep it private.
-- **Battery test** checks the 12 V battery in three steps: resting voltage with the engine off, the dip while you start the engine, and the charging voltage once it's running. On hybrids and electric cars, tick the option to skip the starting step. It's a quick check using rules of thumb; a garage load test is the definitive answer.
+- **Create health report** reads the codes, readiness, self-tests and (optionally) every current value, and produces a report as a PDF named after the car and the date (for example `kapobd-report-ab12-cde-2026-11-20.pdf`). **Share** it, **Download** it, **Copy as text**, **Email** it or **Print** it. It includes the VIN; remove it before posting publicly if you'd rather keep it private.
+- **Send diagnostics** gathers everything at once (the PDF report, the full log and the raw data) so you can send it to someone helping you. **Share** sends the files as attachments where the browser allows it; **Email** works everywhere but can only include the text. Set the address under **Console → Send diagnostics**; it's kept on this device only.
+- **Battery test** checks the 12 V battery in three steps: resting voltage with the engine off, the dip while you start the engine, and the charging voltage once it's running. On hybrids and electric cars, tick the option to skip the starting step. It's a quick check using rules of thumb; a garage load test is the definitive answer. Some adapters misreport the voltage: when the car reports its own voltage too, KapOBD compares them and corrects the adapter's readings if they disagree.
 - **Maintenance** keeps dated entries (service, MOT, tyres and so on) and the next MOT and service dates. Reminders appear on the Vehicle screen when they're due within 30 days.
 - **Computers** lists each of the car's computers by name, with calibration IDs and how often each self-check has completed.
 
@@ -112,7 +119,7 @@ On **Vehicle**:
 
 If something doesn't work with your car or adapter:
 
-1. Open **Console** and tap **Copy log**. **Share** and **Download** also work.
+1. Open **Console** and use **Send diagnostics** (or **Copy as text** under *This log*). If sharing or downloading doesn't work in your browser, the **Sharing test** under Console shows which methods do; include its results in the log.
 2. [Open an issue](https://github.com/AshKapow/KapOBD/issues) saying which car (make, model, year, petrol/diesel/hybrid) and which adapter you used, and paste the log.
 
 The log contains your car's VIN. Remove it before posting if you'd rather keep it private.
@@ -134,6 +141,7 @@ KapOBD only ever sends:
 - adapter setup commands (`AT…`), except a few that could reconfigure or flood the adapter
 - the read-only OBD-II requests for live data, freeze-frame data, fault codes, self-test results and vehicle information (modes `01`, `02`, `03`, `06`, `07`, `09` and `0A`)
 - the adapter's own battery-voltage reading (`ATRV`) for the battery test
+- for the experimental **Other warning lights** check only: "report fault codes" (UDS service `19`, sub-function `02`, read-only) addressed to one computer at a time, plus the adapter commands to address it (`ATSH`, `ATCRA`). The app's normal addressing is restored afterwards.
 
 Clearing fault codes (mode `04`) is only possible from the **Codes** screen, after the warnings, an engine-off check and two confirmations. It's sent once, never from the Console, and never retried automatically. Anything that could write to, reset or unlock a car's computers is refused before it reaches the adapter.
 

@@ -2,6 +2,8 @@
 // (ATRV, an adapter command - nothing is sent to the car's computers).
 // Thresholds are common rules of thumb, not a substitute for a load test.
 
+import { readPid } from './obd/modes.js';
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function parseVoltage(res) {
@@ -10,12 +12,16 @@ export function parseVoltage(res) {
   return m ? Number(m[1]) : null;
 }
 
-/** Read ATRV repeatedly for `ms`, or until `stop(samples)` returns true. */
-export async function sampleVoltage(elm, ms, { onSample, stop, gapMs = 0 } = {}) {
+/**
+ * Read ATRV repeatedly for `ms`, or until `stop(samples)` returns true.
+ * `scale` corrects an adapter whose voltage reading is off (see checkAdapterVoltage).
+ */
+export async function sampleVoltage(elm, ms, { onSample, stop, gapMs = 0, scale = 1 } = {}) {
   const samples = [];
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    const v = parseVoltage(await elm.send('ATRV', { quiet: true }));
+    const raw = parseVoltage(await elm.send('ATRV', { quiet: true }));
+    const v = raw == null ? null : raw * scale;
     if (v != null) {
       samples.push({ t: Date.now(), v });
       onSample?.(v, samples);
@@ -25,6 +31,43 @@ export async function sampleVoltage(elm, ms, { onSample, stop, gapMs = 0 } = {})
   }
   return samples;
 }
+
+/**
+ * Some adapters misreport the voltage (one read 28.3 V on a 12 V car whose own
+ * figure was 12.7 V). Compare with the car's control module voltage (PID 42)
+ * when the car reports it, and work out a correction.
+ * Returns { scale, adapter, car, corrected, usable, note }.
+ */
+export async function checkAdapterVoltage(elm, supported01 = []) {
+  const adapter = average(await sampleVoltage(elm, 600));
+  let car = null;
+  if (supported01.includes(0x42)) {
+    const vals = [];
+    for (let i = 0; i < 3; i++) {
+      for (const v of (await readPid(elm, 0x42)).values) if (typeof v.value === 'number') vals.push(v.value);
+    }
+    if (vals.length) car = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+  const plausible = (v) => v != null && v >= 8 && v <= 16.5;
+  if (adapter == null) return { scale: 1, adapter, car, corrected: false, usable: false, note: 'The adapter gave no voltage reading.' };
+  if (car != null && plausible(car) && Math.abs(adapter - car) > 1.0) {
+    return {
+      scale: car / adapter,
+      adapter,
+      car,
+      corrected: true,
+      usable: true,
+      note: `The adapter’s own voltage reading (${adapter.toFixed(1)} V) didn’t match the car’s (${car.toFixed(1)} V), so the readings were corrected using the car’s figure.`,
+    };
+  }
+  if (car == null && !plausible(adapter)) {
+    return { scale: 1, adapter, car, corrected: false, usable: false, note: `The adapter’s voltage reading (${adapter.toFixed(1)} V) isn’t possible on a 12 V car, and this car doesn’t report its own voltage, so the battery test can’t give a trustworthy result.` };
+  }
+  return { scale: 1, adapter, car, corrected: false, usable: true, note: null };
+}
+
+/** For status displays: is this adapter voltage plausible for a 12 V car? */
+export const plausibleVoltage = (v) => v != null && v >= 8 && v <= 16.5;
 
 export const average = (samples) => (samples.length ? samples.reduce((s, x) => s + x.v, 0) / samples.length : null);
 

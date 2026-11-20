@@ -18,7 +18,7 @@ const BLOCKED_AT = [
 ];
 
 // Exact request lengths in hex characters (mode byte included).
-const LENGTHS = { '01': [4, 14], '02': [6, 6], '03': [2, 2], '04': [2, 2], '06': [4, 4], '07': [2, 2], '09': [4, 4], '0A': [2, 2], '22': [6, 6] };
+const LENGTHS = { '01': [4, 14], '02': [6, 6], '03': [2, 2], '04': [2, 2], '06': [4, 4], '07': [2, 2], '09': [4, 4], '0A': [2, 2], '19': [6, 6], '22': [6, 6] };
 
 export function normalizeCommand(cmd) {
   return String(cmd ?? '').toUpperCase().replace(/\s+/g, '');
@@ -27,9 +27,10 @@ export function normalizeCommand(cmd) {
 /**
  * Decide whether a command may be sent.
  * opts.allowMode22 – only the Experimental screen passes this
+ * opts.allowUds19 – only the experimental "other warning lights" check passes this
  * opts.clearConfirmed – only the clear-codes confirmation flow passes this
  */
-export function checkCommand(cmd, { allowMode22 = false, clearConfirmed = false } = {}) {
+export function checkCommand(cmd, { allowMode22 = false, allowUds19 = false, clearConfirmed = false } = {}) {
   // Line breaks or other control characters could smuggle a second command.
   if (/[^\x20-\x7e]/.test(String(cmd ?? ''))) return { ok: false, reason: 'Control characters are not allowed in a command' };
   const c = normalizeCommand(cmd);
@@ -48,6 +49,10 @@ export function checkCommand(cmd, { allowMode22 = false, clearConfirmed = false 
   const mode = c.slice(0, 2);
   if (mode === '22') {
     if (!allowMode22) return { ok: false, reason: 'Mode 22 is only allowed from the Experimental screen' };
+  } else if (mode === '19') {
+    // UDS ReadDTCInformation, sub-function 02 (report codes by status) only: read-only.
+    if (!allowUds19) return { ok: false, reason: 'Service 19 is only allowed from the experimental other-warning-lights check' };
+    if (!/^1902[0-9A-F]{2}$/.test(c)) return { ok: false, reason: 'Only service 19 sub-function 02 (report fault codes) is allowed' };
   } else if (!ALLOWED_MODES.includes(mode)) {
     return { ok: false, reason: `Service ${mode} is not on the allow-list (only modes ${ALLOWED_MODES.join(', ')})` };
   }

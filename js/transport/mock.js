@@ -118,6 +118,7 @@ export const MOCK_PROFILES = {
       },
     },
     faults: { stored: ['P0420'], pending: ['P0171'], permanent: ['P0420'] },
+    uds: { '15': [['P0420', 0x00, 0x2f]], DA: [], DB: [], E3: [], DF: [] },
     // Mode 06: catalyst result over its limit, matching the stored P0420.
     tests06: [
       [0x01, 0x81, 0x0a, 3690, 3279, 4918],
@@ -146,6 +147,8 @@ export const MOCK_PROFILES = {
       },
     },
     faults: { stored: ['P0301', 'P0128'], pending: [], permanent: ['P0301'] },
+    // Other computers: a chassis code on the ABS module (where tyre-pressure warnings often live).
+    uds: { '7E0': [['P0301', 0x00, 0x2f], ['P0128', 0x00, 0x08]], '760': [['C0750', 0x16, 0x89]], '737': [] },
     // Mode 06: cylinder 1 misfire count over its limit, matching P0301.
     tests06: [
       [0x01, 0x81, 0x0a, 3690, 3279, 4918],
@@ -186,12 +189,13 @@ export const MOCK_PROFILES = {
     vin: 'SIMDIESEL00000004',
     hybrid: false,
     diesel: true,
+    atrvScale: 2.23, // this simulated adapter misreports voltage, like a real one did
     fuelType: 0x04, // diesel
     clear: 'allow',
     ecus: {
       '18DAF110': {
         name: 'engine',
-        pids01: [0x01, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x21, 0x23, 0x2C, 0x2F, 0x31, 0x33, 0x42, 0x46, 0x4D, 0x4E, 0x51, 0x5E, 0x61, 0x62, 0x63, 0xA6],
+        pids01: [0x01, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x11, 0x1C, 0x1F, 0x21, 0x23, 0x2C, 0x2F, 0x31, 0x33, 0x42, 0x46, 0x4D, 0x4E, 0x51, 0x5E, 0x61, 0x62, 0x63, 0x66, 0x6D, 0x70, 0x73, 0x7A, 0xA6],
         pids09: [0x02, 0x04, 0x06, 0x0A, 0x0B],
         info: { name: 'ECM-EngineControl', calid: 'SIMCAL-DSL-0200', cvn: [0x0d, 0x1e, 0x2f, 0x30], ipt: IPT_DIESEL },
         dtcs: true,
@@ -207,6 +211,7 @@ export const MOCK_PROFILES = {
       },
     },
     faults: { stored: [], pending: ['P0401'], permanent: [] },
+    uds: { '10': [['P0401', 0x00, 0x04]], '18': [] },
     tests06: [
       [0x31, 0x80, 0x27, 1850, 1200, 2600],
       [0xb0, 0x80, 0x1a, 6, 0, 20],
@@ -243,6 +248,20 @@ export class SimElm {
     this.headers = false;
     this.searched = false;
     this.last = null;
+    this.header = null; // ATSH: null = the normal functional (all-computers) address
+    this.cra = null;
+  }
+
+  /** Physically addressed request target, or null for functional addressing. */
+  physicalTarget() {
+    const h = this.header;
+    if (!h || h === '7DF' || h === 'DB33F1') return null;
+    if (this.kind === 'can29') return /^DA([0-9A-F]{2})F1$/.exec(h)?.[1] ?? null;
+    return /^[0-9A-F]{3}$/.test(h) ? h : null;
+  }
+
+  replyId(target) {
+    return this.kind === 'can29' ? `18DAF1${target}` : (parseInt(target, 16) + 8).toString(16).toUpperCase();
   }
 
   /** Park (ignition on, engine off) or start up. Starting a conventional engine cranks briefly. */
@@ -367,6 +386,11 @@ export class SimElm {
       case 0x68: return [0x01, clampByte(s.iat + 40), 0, 0, 0, 0, 0];
       case 0x78: case 0x7C: return [0x01, ...u16(((s.engineOn ? 480 : 160) + 40) * 10), 0, 0, 0, 0, 0, 0];
       case 0x8E: return [clampByte(125 + 6)];
+      case 0x66: return [0x01, ...u16(s.maf * 32), 0, 0];
+      case 0x6D: return [0x07, ...u16(s.railKpa / 10 + 150), ...u16(s.railKpa / 10), clampByte(17 + 40), 0, 0, 0, 0, 0];
+      case 0x70: return [0x07, ...u16((s.map + 2) / 0.03125), ...u16(s.map / 0.03125), 0, 0, 0, 0, 0x01];
+      case 0x73: return [0x01, ...u16((s.baro + 2 + s.load * 0.2) / 0.01), 0, 0];
+      case 0x7A: return [0x01, ...u16((1.6 + s.load * 0.05) / 0.01), 0, 0, 0, 0];
       case 0x9A: {
         const amps = Math.round(s.hvAmps * 10);
         return [0x07, 0x00, ...u16(s.hvVolts * 64), (amps >> 8) & 0xff, amps & 0xff, 0x00];
@@ -506,7 +530,8 @@ export class SimElm {
     if (c === 'D') { this.reset(); return ok; }
     if (c === 'I') return { lines: ['ELM327 v1.5'] };
     if (c === '@1') return { lines: ['OBDII to RS232 Interpreter'] };
-    if (c === 'RV') return { lines: [`${this.state().volts.toFixed(1)}V`] };
+    // atrvScale: simulate an adapter that misreports voltage (seen in the field: 28.3 V on a 12 V car).
+    if (c === 'RV') return { lines: [`${(this.state().volts * (this.profile.atrvScale ?? 1)).toFixed(1)}V`] };
     if (c === 'DPN') return { lines: [this.searched ? `A${proto.dpn}` : 'A0'] };
     if (c === 'DP') return { lines: [this.searched ? `AUTO, ${proto.name}` : 'AUTO'] };
     let m;
@@ -514,6 +539,9 @@ export class SimElm {
     if ((m = /^L([01])$/.exec(c))) { this.linefeeds = m[1] === '1'; return ok; }
     if ((m = /^S([01])$/.exec(c))) { this.spaces = m[1] === '1'; return ok; }
     if ((m = /^H([01])$/.exec(c))) { this.headers = m[1] === '1'; return ok; }
+    if ((m = /^SH([0-9A-F]{3}|[0-9A-F]{6}|[0-9A-F]{8})$/.exec(c))) { this.header = m[1]; return ok; }
+    if ((m = /^CRA([0-9A-FX]*)$/.exec(c))) { this.cra = m[1] || null; return ok; }
+    if (/^CP[0-9A-F]{2}$/.test(c)) return ok;
     if (/^SPA?[0-9A-C]$/.test(c)) { this.searched = false; return ok; }
     if (/^(AT[0-2]|ST[0-9A-F]{2}|CAF[01]|M[01]|SH[0-9A-F]{3,8}|CRA[0-9A-FX]*|AR|CEA.*)$/.test(c)) return ok;
     return { lines: ['?'] };
@@ -542,6 +570,15 @@ export class SimElm {
       this.searched = true;
     }
     if (this.random() < this.opts.noDataRate) return this.reply([...echo, ...notices, 'NO DATA'], delay + 200);
+
+    // Physically addressed requests (the experimental other-computers check).
+    const target = this.physicalTarget();
+    if (target || mode === 0x19) {
+      const codes = target && mode === 0x19 ? this.profile.uds?.[target] : undefined;
+      if (!codes) return this.reply([...echo, ...notices, 'NO DATA'], delay + 200);
+      const payload = [0x59, 0x02, 0xff, ...codes.flatMap(([code, ftb, status]) => [...encodeDtc(code), ftb, status])];
+      return this.reply([...echo, ...notices, ...this.formatPayload(this.replyId(target), payload)], delay + 40);
+    }
 
     const s = this.state();
     const answers = [];

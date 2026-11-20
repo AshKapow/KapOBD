@@ -353,3 +353,15 @@ details.ecu details > summary { cursor: pointer; color: var(--muted); min-height
 .maint-form { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
 .maint-form .row input, .maint-form .row select { flex: 1; min-width: 160px; }
 input[type="date"], input[type="number"] { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; min-height: 40px; padding: 6px 10px; color-scheme: dark; }
+
+/* --- Sharing, diagnostics, other computers --- */
+.share-status { min-height: 18px; margin: 4px 0 0; }
+.delivery .actions { margin-bottom: 4px; }
+.rename { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.rename input { width: 100%; }
+input[type="email"] { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; min-height: 40px; padding: 6px 10px; flex: 1; min-width: 200px; }
+.modules > li.module { display: block; padding: 8px 0; border-top: 1px solid var(--line); }
+.modules > li.module:first-child { border-top: 0; }
+.modules ul { list-style: none; padding: 4px 0 0 12px; margin: 0; }
+.modules ul li { padding: 2px 0; }
+.modules code { color: var(--warn); font-weight: 700; }

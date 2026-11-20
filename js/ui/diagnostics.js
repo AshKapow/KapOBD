@@ -38,6 +38,7 @@ function results(app, d, disabled) {
     codeSection(app, 'Permanent codes', 'Can’t be cleared with a scan tool. The car removes them itself once the fault is fixed and it has re-checked.', d.permanent, 'permanent'),
     d.freeze ? freezeCard(app, d.freeze) : null,
     selfTestCard(app, disabled),
+    otherModulesCard(app, disabled),
     clearOffer(app, n, ready, disabled),
     historyCard(app),
   ];
@@ -56,6 +57,7 @@ function summaryCard(d, n, ready) {
       d.permanent.answered ? count(n.permanent, 'permanent') : h('div', { class: 'count muted' }, h('strong', {}, '–'), h('span', {}, 'permanent')),
     ),
     h('p', { class: 'hint' }, `Read at ${new Date(d.readAt).toLocaleTimeString()}.`),
+    h('p', { class: 'hint' }, 'This covers the engine and emissions warning light only. Tyre pressure, ABS, airbag and other dashboard warnings are kept by the car’s other computers: see “Other warning lights” below.'),
   );
 }
 
@@ -139,6 +141,47 @@ function selfTestCard(app, disabled) {
     anyUnknown ? h('p', { class: 'hint' }, 'Some results use units KapOBD doesn’t recognise, so they’re shown as raw numbers. Pass or fail is still correct.') : null,
     intro,
     read,
+  );
+}
+
+// --- other warning lights (experimental) -------------------------------------------
+
+const MODULE_STATUS = { codes: null, none: 'No codes', refused: 'Refused', 'no-answer': 'No answer' };
+
+function otherModulesCard(app, disabled) {
+  const r = app.otherModules;
+  const intro = [
+    h('p', { class: 'hint' }, 'Warnings such as tyre pressure, ABS and airbag are kept by other computers in the car, not the engine computer above. This asks each computer KapOBD found, plus a few common addresses (such as ABS), for its own fault codes.'),
+    h('p', { class: 'hint' }, 'Experimental and manufacturer-specific: it only reads (nothing is changed), but addresses differ between makes, some computers can’t be reached through the OBD port with a basic adapter, and KapOBD has no descriptions for these codes.'),
+  ];
+  const button = h('button', { class: 'btn', disabled, onclick: () => app.runModuleScan() }, r ? 'Check again' : 'Check other computers');
+  if (!r) return h('section', { class: 'card' }, h('h3', {}, 'Other warning lights (experimental)'), intro, button);
+  if (!r.supported) return h('section', { class: 'card' }, h('h3', {}, 'Other warning lights (experimental)'), h('p', { class: 'hint' }, r.reason), button);
+  const found = r.modules.reduce((n, m) => n + m.codes.length, 0);
+  const answered = r.modules.filter((m) => m.status !== 'no-answer');
+  return h(
+    'section',
+    { class: 'card' },
+    h('h3', {}, 'Other warning lights (experimental)'),
+    h('p', { class: found ? 'result-bad' : 'result-good' }, found ? `✗ ${found} code${found === 1 ? '' : 's'} found across the car’s computers` : `✓ No codes in the ${answered.length} computer${answered.length === 1 ? '' : 's'} that answered`),
+    h(
+      'ul',
+      { class: 'codes modules' },
+      r.modules
+        .filter((m) => m.status !== 'no-answer')
+        .map((m) =>
+          h(
+            'li',
+            { class: 'module' },
+            h('div', {}, h('strong', {}, m.label), h('small', { class: 'muted' }, ` · ${m.status === 'codes' ? `${m.codes.length} code(s)` : MODULE_STATUS[m.status]}${m.detail ? ` (${m.detail})` : ''}`)),
+            m.codes.length ? h('ul', {}, m.codes.map((c) => h('li', {}, h('code', {}, c.code), ' ', h('small', {}, c.flagsText)))) : null,
+          ),
+        ),
+    ),
+    r.modules.some((m) => m.status === 'no-answer') ? h('p', { class: 'hint' }, `No answer from: ${r.modules.filter((m) => m.status === 'no-answer').map((m) => m.label).join('; ')}. That usually just means nothing is fitted at that address on this car.`) : null,
+    found ? h('p', { class: 'hint' }, 'These are manufacturer-specific codes (the part after the dash is the type of fault). A dealer or a manufacturer-specific tool can tell you what they mean. They can’t be cleared from KapOBD.') : null,
+    intro,
+    button,
   );
 }
 

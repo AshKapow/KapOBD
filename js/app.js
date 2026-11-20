@@ -5,7 +5,7 @@ import { Logger } from './logger.js';
 import { Elm327, CommandRejected } from './elm327.js';
 import { BleTransport, bleAvailable, describeError } from './transport/ble.js';
 import { MockTransport, MOCK_PROFILES } from './transport/mock.js';
-import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, setNickname, setEcuNames, ecuLabel } from './vehicle.js';
+import { discoverVehicle, snapshot, saveProfile, loadProfiles, deleteProfile, setNickname, setRegistration, setEcuNames, ecuLabel } from './vehicle.js';
 import { load, save } from './storage.js';
 import { readAllCodes, checkClearConditions, clearAndVerify } from './diagnostics.js';
 import { loadDtcTable } from './obd/dtc.js';
@@ -16,8 +16,11 @@ import { readVehicleInfo } from './obd/vehicleinfo.js';
 import { decodeVin } from './obd/vin.js';
 import { loadHistory, saveHistory, updateHistory, recordClear } from './history.js';
 import { loadMaintenance, saveMaintenance, addEntry, removeEntry, setDue, maintenanceFor, dueStatus, describeDue } from './maintenance.js';
-import { sampleVoltage, average, rateResting, rateCranking, rateCharging, engineStarted, crankMinimum } from './battery.js';
+import { sampleVoltage, average, rateResting, rateCranking, rateCharging, engineStarted, crankMinimum, checkAdapterVoltage } from './battery.js';
 import { buildReport } from './report.js';
+import { scanModules } from './obd/modules.js';
+import { capabilities, fileName, makeFile } from './share.js';
+import { hex2 } from './obd/pids.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const DEFAULT_SETTINGS = {
@@ -29,6 +32,7 @@ const DEFAULT_SETTINGS = {
   units: { ...DEFAULT_UNITS }, // speed mph|kmh, temp C|F, distance mi|km
   tiles: {}, // per vehicle profile key: the live tiles chosen, in order
   autoDriving: true, // switch to the driving view once the car is moving
+  diagnosticsEmail: '', // where 'Send diagnostics' emails go (kept on this device only)
 };
 
 export const MAX_TILES = 8;
@@ -114,7 +118,9 @@ export const app = {
   maintenance: loadMaintenance(), // maintenance log per vehicle
   batteryTest: null, // { step, skipCrank, live, resting, crankMin, charging, ... }
   batteryResults: load('battery', {}), // last battery test per vehicle
-  report: null, // { title, html, text }
+  report: null, // { title, html, text, pdf(), sections }
+  otherModules: null, // experimental UDS 19 check (obd/modules.js scanModules)
+  diagBundle: null, // { title, files, text } from runDiagnostics()
   offline: 'checking', // offline copy: 'checking' | 'ready' | 'unavailable'
   online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
   live: null, // LivePoller while the Live screen is polling
@@ -156,6 +162,11 @@ export const app = {
   logHeader() {
     const lines = [`# ${this.name} v${this.version} — log copied ${new Date().toString()}`];
     if (this.preview) lines.push(`# Preview build of branch: ${this.preview}`);
+    try {
+      lines.push(`# Sharing: ${JSON.stringify(capabilities())}`);
+    } catch {
+      /* not in a browser */
+    }
     if (typeof navigator !== 'undefined') lines.push(`# Browser: ${navigator.userAgent}`);
     const t = this.transport;
     if (t?.info) {
@@ -205,7 +216,7 @@ export const app = {
       p = Promise.reject(err);
     }
     this.logger.info(`Connect: ${t.label} (app v${this.version})`);
-    this.set({ status: 'connecting', busy: 'Connecting…', error: null, notice: null, init: null, identify: null, profile: null, snapshot: null, diag: null, clearFlow: null, selfTests: null, vehicleInfo: null, batteryTest: null, report: null });
+    this.set({ status: 'connecting', busy: 'Connecting…', error: null, notice: null, init: null, identify: null, profile: null, snapshot: null, diag: null, clearFlow: null, selfTests: null, vehicleInfo: null, batteryTest: null, report: null, otherModules: null, diagBundle: null });
     p.then(
       async () => {
         this._attach(t);
@@ -486,6 +497,70 @@ export const app = {
     this.set({ history });
   },
 
+  /** The whole log as text, with its descriptive header. */
+  logText() {
+    return this.logger.format({ includeFrags: this.settings.includeFrags, header: this.logHeader() });
+  },
+
+  // --- other warning lights (experimental, UDS 19 02) ------------------------------
+
+  async runModuleScan() {
+    if (!this.profile) return;
+    await this._action('Asking the car’s other computers for codes…', async () => {
+      const otherModules = await scanModules(this.elm, this.profile, { onStep: (s) => this.set({ progress: s }), labelFor: (id) => (ecuLabel(id) === id ? null : ecuLabel(id)) });
+      this.set({ otherModules });
+    });
+  },
+
+  // --- diagnostics bundle ------------------------------------------------------------
+
+  /** Gather a report, the log and raw data into files to share or email. */
+  async runDiagnostics() {
+    if (!this.profile) return;
+    await this._action('Gathering diagnostics…', async () => {
+      const step = (s) => this.set({ progress: s });
+      const [diag, dtcTable] = await Promise.all([readAllCodes(this.elm, { onStep: step }), loadDtcTable()]);
+      this.set({ diag, dtcTable });
+      this._recordHistory(diag);
+      if (!this.vehicleInfo) this.set({ vehicleInfo: await readVehicleInfo(this.elm, this.profile, { onStep: step }) });
+      if (!this.selfTests) this.set({ selfTests: await readMonitorTests(this.elm, { onStep: step }) });
+      step('current values');
+      const rows = await snapshot(this.elm, this.profile);
+      const units = this.settings.units;
+      const values = rows.filter((r) => r.value != null && typeof r.value !== 'object').map((r) => ({ name: r.name, text: formatValue(r.pid, r.value, units) }));
+      const report = buildReport(this.reportData(values));
+      const data = {
+        app: { name: this.name, version: this.version, preview: this.preview },
+        createdAt: new Date().toISOString(),
+        browser: typeof navigator === 'undefined' ? null : navigator.userAgent,
+        sharing: capabilities(),
+        transport: this.transport?.info ?? null,
+        adapter: this.init,
+        stats: this.elm?.stats,
+        profile: this.profile,
+        vehicleInfo: this.vehicleInfo,
+        diag: this.diag,
+        selfTests: this.selfTests,
+        otherModules: this.otherModules,
+        battery: this.lastBattery,
+        values: rows.map((r) => ({ pid: hex2(r.pid), ecu: r.ecu ?? null, name: r.name ?? null, value: r.value ?? null, raw: r.raw ? r.raw.map(hex2).join(' ') : null, error: r.error ?? null })),
+      };
+      const p = this.profile;
+      const files = [
+        makeFile(fileName('report', p, 'pdf'), report.pdf()),
+        makeFile(fileName('log', p, 'txt', { withTime: true }), this.logText()),
+        makeFile(fileName('data', p, 'json', { withTime: true }), JSON.stringify(data, null, 2)),
+      ];
+      const title = `${this.name} diagnostics: ${p.registration ?? p.nickname ?? p.vin ?? 'vehicle'} (${new Date().toLocaleDateString('en-GB')})`;
+      const text = `${report.text}
+
+----- LOG -----
+${this.logText()}`;
+      this.set({ diagBundle: { title, files, text, createdAt: Date.now() }, report: { ...report, fileName: files[0].name } });
+      this.logger.info(`Diagnostics gathered: ${files.map((f) => `${f.name} (${f.size} bytes)`).join(', ')}`);
+    });
+  },
+
   // --- self-tests (mode 06) and vehicle info (mode 09) --------------------------
 
   async runSelfTests() {
@@ -525,7 +600,15 @@ export const app = {
 
   async runBatteryResting() {
     await this._action('Measuring the resting voltage…', async () => {
-      const samples = await sampleVoltage(this.elm, 3000, { onSample: (v) => this.updateBattery({ live: v }) });
+      // Check the adapter's voltage reading against the car's own first.
+      const check = await checkAdapterVoltage(this.elm, this.profile?.supported01 ?? []);
+      this.logger.info(`Battery test: adapter ${check.adapter?.toFixed(2)} V, car ${check.car?.toFixed(2) ?? 'n/a'} V${check.corrected ? `, correction ×${check.scale.toFixed(3)}` : ''}`);
+      if (!check.usable) {
+        this.set({ batteryTest: { ...this.batteryTest, step: 'intro' }, error: check.note });
+        return;
+      }
+      this.updateBattery({ scale: check.scale, calibrationNote: check.note });
+      const samples = await sampleVoltage(this.elm, 3000, { scale: check.scale, onSample: (v) => this.updateBattery({ live: v }) });
       const resting = average(samples);
       this.logger.info(`Battery test: resting ${resting?.toFixed(2)} V from ${samples.length} readings`);
       this.updateBattery({ resting, step: this.batteryTest?.skipCrank ? 'charge-ready' : 'crank-ready' });
@@ -536,7 +619,7 @@ export const app = {
     await this._action('Start the engine now…', async () => {
       // Simulators: the engine "starts" by itself a moment into this step.
       if (this.simParked) setTimeout(() => this.setSimParked(false), 1500);
-      const samples = await sampleVoltage(this.elm, 20000, { stop: engineStarted, onSample: (v) => this.updateBattery({ live: v }) });
+      const samples = await sampleVoltage(this.elm, 20000, { scale: this.batteryTest?.scale ?? 1, stop: engineStarted, onSample: (v) => this.updateBattery({ live: v }) });
       const started = engineStarted(samples);
       const crankMin = crankMinimum(samples);
       this.logger.info(`Battery test: ${started ? 'engine start seen' : 'no engine start seen'}, lowest ${crankMin?.toFixed(2)} V`);
@@ -548,7 +631,7 @@ export const app = {
   async runBatteryCharging() {
     await this._action('Measuring the charging voltage…', async () => {
       if (this.simParked) this.setSimParked(false); // simulators: switch on fully first
-      const samples = await sampleVoltage(this.elm, 4000, { onSample: (v) => this.updateBattery({ live: v }) });
+      const samples = await sampleVoltage(this.elm, 4000, { scale: this.batteryTest?.scale ?? 1, onSample: (v) => this.updateBattery({ live: v }) });
       const charging = average(samples);
       this.logger.info(`Battery test: charging ${charging?.toFixed(2)} V`);
       this._finishBattery({ charging });
@@ -563,7 +646,7 @@ export const app = {
     const order = ['good', 'ok', 'low', 'weak'];
     const levels = [restingRating, crankRating, chargingRating].filter((r) => r && r.level !== 'unknown').map((r) => r.level);
     const overall = levels.sort((x, y) => order.indexOf(y) - order.indexOf(x))[0] ?? 'unknown';
-    const result = { at: Date.now(), resting: b.resting, crankMin: b.crankMin ?? null, charging: b.charging, skippedCrank: !!b.skipCrank, restingRating, crankRating, chargingRating, overall };
+    const result = { at: Date.now(), resting: b.resting, crankMin: b.crankMin ?? null, charging: b.charging, skippedCrank: !!b.skipCrank, restingRating, crankRating, chargingRating, overall, calibrationNote: b.calibrationNote ?? null };
     let batteryResults = this.batteryResults;
     if (this._savesData) {
       batteryResults = { ...batteryResults, [this.profile.key]: result };
@@ -622,7 +705,8 @@ export const app = {
         const units = this.settings.units;
         values = rows.filter((r) => r.value != null && typeof r.value !== 'object').map((r) => ({ name: r.name, text: formatValue(r.pid, r.value, units) }));
       }
-      this.set({ report: buildReport(this.reportData(values)) });
+      const report = buildReport(this.reportData(values));
+      this.set({ report: { ...report, fileName: fileName('report', this.profile, 'pdf') } });
       this.logger.info('Health report created');
     });
   },
@@ -641,6 +725,7 @@ export const app = {
       generatedAt: Date.now(),
       vehicle: {
         name: p.nickname ?? null,
+        registration: p.registration ?? null,
         vin: p.vin,
         simulated: this.transport?.kind === 'mock',
         make: vin?.manufacturer,
@@ -656,12 +741,14 @@ export const app = {
       selfTests: this.selfTests,
       battery: this.lastBattery,
       maintenance: this._savesData ? { due: this.dueHere, entries: this.maintenanceHere.entries } : null,
+      otherModules: this.otherModules?.supported ? this.otherModules.modules : null,
       values,
     };
   },
 
-  renameProfile(key, nickname) {
-    const updated = setNickname(key, nickname);
+  renameProfile(key, nickname, registration) {
+    setNickname(key, nickname);
+    const updated = registration === undefined ? loadProfiles()[key] : setRegistration(key, registration);
     this.set({ profiles: loadProfiles(), renaming: null, profile: this.profile?.key === key && updated ? updated : this.profile });
   },
 

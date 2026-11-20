@@ -125,8 +125,36 @@ test('health report: codes, readiness, battery; escaped; text version', async ()
   assert.match(r.html, /Cylinder 1 misfire detected/);
   assert.match(r.html, /&lt;Dave’s&gt; car/, 'vehicle name escaped');
   assert.ok(!r.html.includes('<Dave'), 'no raw markup from data');
-  assert.match(r.text, /STORED CODES\nP0301/);
+  assert.match(r.text, /STORED CODES\n- P0301: Cylinder 1 misfire detected/);
   assert.match(r.text, /Engine warning light: ON/);
   assert.match(r.text, /Resting: 12\.60 V/);
   assert.match(r.html, /Simulated car/);
+});
+
+test('adapter voltage cross-check: corrected when it disagrees with the car, refused when implausible', async () => {
+  const { checkAdapterVoltage } = await import('../js/battery.js');
+  const { discoverVehicle } = await import('../js/vehicle.js');
+  // Diesel simulator: the adapter reads 2.23× too high, like the real one in the field.
+  const diesel = await setup('diesel');
+  const dp = await discoverVehicle(diesel.elm);
+  const c = await checkAdapterVoltage(diesel.elm, dp.supported01);
+  assert.equal(c.corrected, true);
+  assert.ok(c.adapter > 25, `adapter reads ${c.adapter}`);
+  assert.ok(Math.abs(c.adapter * c.scale - c.car) < 0.05, 'corrected readings match the car');
+  assert.match(c.note, /didn’t match the car’s/);
+
+  // Petrol simulator: adapter and car agree, so no correction.
+  const petrol = await setup('petrol');
+  const pp = await discoverVehicle(petrol.elm);
+  const ok = await checkAdapterVoltage(petrol.elm, pp.supported01);
+  assert.equal(ok.corrected, false);
+  assert.equal(ok.usable, true);
+  assert.equal(ok.scale, 1);
+
+  // Older car without PID 42 and an implausible adapter reading: refused.
+  const old = await setup('oldpetrol');
+  old.sim.profile = { ...old.sim.profile, atrvScale: 2.3 };
+  const bad = await checkAdapterVoltage(old.elm, [0x0c, 0x0d]);
+  assert.equal(bad.usable, false);
+  assert.match(bad.note, /isn’t possible on a 12 V car/);
 });
