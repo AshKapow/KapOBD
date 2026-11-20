@@ -1,9 +1,11 @@
 // Vehicle screen: details (VIN, computers), health report, battery test,
 // maintenance log, every-value snapshot and saved vehicles.
-import { h, replace, messageBox, confirmButton, copyText } from './dom.js';
+import { h, replace, messageBox, confirmButton } from './dom.js';
 import { PIDS, hex2, formatValue, FUEL_TYPES } from '../obd/pids.js';
 import { ecuLabel } from '../vehicle.js';
 import { ENTRY_TYPES } from '../maintenance.js';
+import { deliveryButtons } from './sharebar.js';
+import { makeFile, fileName } from '../share.js';
 
 const pidName = (p) => PIDS[p]?.name ?? 'Unknown PID';
 const LEVEL_TEXT = { good: 'Good', ok: 'OK', low: 'Low', weak: 'Needs attention', unknown: '—' };
@@ -32,6 +34,7 @@ function profileView(p, app, disabled) {
       { class: 'actions wrap' },
       h('button', { class: 'btn primary', disabled, onclick: () => app.runReport({ includeValues: draft.reportValues }) }, 'Create health report'),
       h('button', { class: 'btn', disabled: disabled || !!app.batteryTest, onclick: () => app.startBatteryTest() }, 'Battery test'),
+      h('button', { class: 'btn', disabled, onclick: () => { location.hash = '#console'; app.runDiagnostics(); } }, 'Send diagnostics'),
     ),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: draft.reportValues, onchange: (e) => (draft.reportValues = e.target.checked) }), 'Include current values in the report'),
     app.batteryTest ? batteryView(app) : lastBatteryNote(app),
@@ -49,6 +52,7 @@ function detailsCard(p, app) {
   const simulated = app.transport?.kind === 'mock';
   const vin = app.decodedVin;
   const rows = [
+    ['Registration', p.registration],
     ['VIN', p.vin ?? 'not reported'],
     ['Make', simulated ? 'Simulated car' : vin?.valid ? vin.manufacturer ?? 'Not in KapOBD’s list' : null],
     ['Built in', !simulated && vin?.valid ? vin.region : null],
@@ -107,52 +111,33 @@ function computersCard(p, app, disabled) {
 
 // --- health report ---------------------------------------------------------------
 
+let reportCache = { report: null, el: null };
+
 function reportPanel(app) {
   const r = app.report;
+  if (reportCache.report === r && reportCache.el) return reportCache.el;
   const frame = h('iframe', { class: 'report-frame', title: r.title });
   frame.srcdoc = r.html;
-  const file = () => new File([r.html], `${r.title.replace(/[^\w-]+/g, '-').replace(/-+/g, '-').toLowerCase()}.html`, { type: 'text/html' });
-  const status = h('span', { class: 'hint' });
-  const flash = (t) => {
-    status.textContent = t;
-    setTimeout(() => (status.textContent = ''), 4000);
-  };
-  const share = async () => {
-    try {
-      const f = file();
-      if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: r.title });
-      else if (navigator.share) await navigator.share({ title: r.title, text: r.text });
-      else flash('Sharing isn’t available here: use Download or Copy text.');
-    } catch {
-      /* cancelled */
-    }
-  };
-  const download = () => {
-    const a = h('a', { href: URL.createObjectURL(file()), download: file().name });
-    document.body.append(a);
-    a.click();
-    setTimeout(() => {
-      URL.revokeObjectURL(a.href);
-      a.remove();
-    }, 1000);
-  };
-  return h(
+  const name = r.fileName ?? fileName('report', app.profile, 'pdf');
+  const pdf = () => makeFile(name, r.pdf());
+  const note = h('p', { class: 'hint share-status' });
+  const el = h(
     'section',
     { class: 'card report' },
     h('h3', {}, 'Health report'),
     frame,
+    deliveryButtons(app, { what: 'the report', title: r.title, files: () => [pdf()], text: () => r.text, emailTo: () => app.settings.diagnosticsEmail }),
     h(
       'div',
       { class: 'actions wrap' },
-      typeof navigator !== 'undefined' && navigator.share ? h('button', { class: 'btn primary', onclick: share }, 'Share') : null,
-      h('button', { class: 'btn', onclick: download }, 'Download'),
-      h('button', { class: 'btn', onclick: async () => flash((await copyText(r.text)) ? 'Report copied as text.' : 'Copy failed.') }, 'Copy as text'),
-      h('button', { class: 'btn', onclick: () => { try { frame.contentWindow.print(); } catch { flash('Printing isn’t available here: use Share or Download.'); } } }, 'Print'),
-      h('button', { class: 'btn secondary', onclick: () => app.set({ report: null }) }, 'Close'),
+      h('button', { class: 'btn small', onclick: () => { try { frame.contentWindow.print(); } catch { note.textContent = 'Printing isn’t available here: use Share or Download.'; } } }, 'Print'),
+      h('button', { class: 'btn small secondary', onclick: () => app.set({ report: null }) }, 'Close'),
     ),
-    status,
-    h('p', { class: 'hint' }, 'The report includes the VIN. Remove it before sharing publicly if you’d rather keep it private.'),
+    note,
+    h('p', { class: 'hint' }, `Saved as ${name}. The report includes the VIN; remove it before sharing publicly if you’d rather keep it private.`),
   );
+  reportCache = { report: r, el };
+  return el;
 }
 
 // --- battery test ------------------------------------------------------------------
@@ -194,6 +179,7 @@ function batteryView(app) {
       line('Resting', r.resting, r.restingRating),
       r.skippedCrank ? h('p', {}, 'While starting: not tested.') : r.crankMin != null ? line('Lowest while starting', r.crankMin, r.crankRating) : h('p', {}, 'While starting: no start was seen.'),
       line('Charging', r.charging, r.chargingRating),
+      r.calibrationNote ? h('p', { class: 'hint' }, r.calibrationNote) : null,
       h('p', { class: 'hint' }, 'Rules of thumb only: a garage load test is the definitive check. Readings are a little lower with the ignition on, and higher just after driving.'),
       h('div', { class: 'actions' }, h('button', { class: 'btn', disabled, onclick: () => app.startBatteryTest() }, 'Test again'), h('button', { class: 'btn secondary', onclick: () => app.cancelBatteryTest() }, 'Close')),
     ];
@@ -304,8 +290,8 @@ function savedProfiles(app) {
             : h(
                 'span',
                 {},
-                h('strong', {}, p.nickname ?? p.vin ?? p.key),
-                h('small', {}, `${p.nickname ? ` ${p.vin ?? ''}` : ''} · ${p.supported01.length} PIDs · ${Object.keys(p.ecus).length} ECU(s) · ${new Date(p.lastSeen).toLocaleDateString('en-GB')}`),
+                h('strong', {}, p.nickname ?? p.registration ?? p.vin ?? p.key),
+                h('small', {}, `${p.registration && p.nickname ? ` ${p.registration}` : ''}${p.nickname || p.registration ? ` ${p.vin ?? ''}` : ''} · ${p.supported01.length} PIDs · ${Object.keys(p.ecus).length} ECU(s) · ${new Date(p.lastSeen).toLocaleDateString('en-GB')}`),
               ),
           app.renaming === p.key
             ? null
@@ -323,13 +309,15 @@ function savedProfiles(app) {
 }
 
 function renameForm(app, p) {
-  const input = h('input', { type: 'text', value: p.nickname ?? '', placeholder: 'e.g. Dave’s Golf', maxlength: '40', autocomplete: 'off' });
+  const input = h('input', { type: 'text', value: p.nickname ?? '', placeholder: 'Name, e.g. Dave’s Golf', maxlength: '40', autocomplete: 'off', 'aria-label': 'Name' });
+  const reg = h('input', { type: 'text', value: p.registration ?? '', placeholder: 'Registration (optional)', maxlength: '12', autocomplete: 'off', autocapitalize: 'characters', 'aria-label': 'Registration' });
   queueMicrotask(() => input.focus());
   return h(
     'form',
-    { class: 'cmd', onsubmit: (e) => { e.preventDefault(); app.renameProfile(p.key, input.value); } },
+    { class: 'rename', onsubmit: (e) => { e.preventDefault(); app.renameProfile(p.key, input.value, reg.value); } },
     input,
-    h('button', { class: 'btn small primary', type: 'submit' }, 'Save'),
-    h('button', { class: 'btn small secondary', type: 'button', onclick: () => app.set({ renaming: null }) }, 'Cancel'),
+    reg,
+    h('div', { class: 'actions' }, h('button', { class: 'btn small primary', type: 'submit' }, 'Save'), h('button', { class: 'btn small secondary', type: 'button', onclick: () => app.set({ renaming: null }) }, 'Cancel')),
+    h('p', { class: 'hint' }, 'The registration isn’t reported by the car; it’s only used to name reports and files on this device.'),
   );
 }

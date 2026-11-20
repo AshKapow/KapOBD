@@ -140,6 +140,20 @@ export const PIDS = {
   0x7c: { name: 'Particulate filter temp', unit: '°C', kind: 'temp', digits: 0, bytes: 3, decode: sensorTemp, poll: 'slow', group: 'advanced' },
   0x8e: { name: 'Engine friction torque', unit: '%', bytes: 1, decode: (d) => d[0] - 125, poll: 'slow', group: 'advanced' },
   0x9a: { name: 'Hybrid battery voltage', unit: 'V', digits: 0, bytes: 4, decode: (d) => decodeHybridBattery(d).voltage, detail: decodeHybridBattery, unverified: true, poll: 'slow', group: 'main' },
+  // Diesel values, checked for plausibility against a real 2017 diesel's
+  // idle readings (A = which sensors are present, then the values).
+  0x66: { name: 'Air flow (MAF sensor A)', unit: 'g/s', bytes: 3, decode: (d) => (d[1] * 256 + d[2]) / 32, poll: 'slow', group: 'advanced' },
+  0x6c: { name: 'Commanded throttle A', unit: '%', bytes: 2, decode: (d) => (d[1] * 100) / 255, poll: 'slow', group: 'advanced' },
+  0x6d: {
+    name: 'Fuel rail pressure A (actual)', unit: 'kPa', digits: 0, bytes: 5, decode: (d) => (d[3] * 256 + d[4]) * 10, poll: 'slow', group: 'advanced',
+    detail: (d) => ({ commandedKpa: (d[1] * 256 + d[2]) * 10, fuelTempC: d.length >= 6 ? d[5] - 40 : null }),
+  },
+  0x70: {
+    name: 'Boost pressure A', unit: 'kPa', digits: 1, bytes: 5, decode: (d) => (d[3] * 256 + d[4]) * 0.03125, poll: 'fast', group: 'main',
+    detail: (d) => ({ commandedKpa: (d[1] * 256 + d[2]) * 0.03125 }),
+  },
+  0x73: { name: 'Exhaust pressure (bank 1)', unit: 'kPa', digits: 1, bytes: 3, decode: (d) => (d[1] * 256 + d[2]) * 0.01, poll: 'slow', group: 'advanced' },
+  0x7a: { name: 'Particulate filter pressure difference', unit: 'kPa', digits: 2, bytes: 3, decode: (d) => (d[1] * 256 + d[2]) * 0.01, poll: 'slow', group: 'main' },
   0xa6: { name: 'Odometer', unit: 'km', kind: 'distance', digits: 0, bytes: 4, decode: (d) => (d[0] * 2 ** 24 + d[1] * 2 ** 16 + d[2] * 2 ** 8 + d[3]) / 10, poll: 'once', group: 'info' },
 };
 

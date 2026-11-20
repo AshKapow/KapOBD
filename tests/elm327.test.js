@@ -203,3 +203,10 @@ test('mode 06 is read-only monitor results: one MID per request, nothing else', 
   assert.equal(checkCommand('06').ok, false, 'needs a MID');
   assert.equal(checkCommand('060102').ok, false, 'one MID only');
 });
+
+test('UDS service 19: only "report codes by status" (19 02), only from the experimental check', () => {
+  assert.equal(checkCommand('1902FF').ok, false, 'not without the flag');
+  assert.equal(checkCommand('1902FF', { allowUds19: true }).ok, true);
+  assert.equal(checkCommand('1902', { allowUds19: true }).ok, false, 'needs a status mask');
+  for (const c of ['1904FF', '190A00', '1906FF', '14FFFF', '2E1234', '3101FF', '2701', '1003']) assert.equal(checkCommand(c, { allowUds19: true }).ok, false, c);
+});
